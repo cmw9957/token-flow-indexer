@@ -1,0 +1,11 @@
+[package]
+name = "token-flow-indexer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+prost = "0.14"
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+tonic = "0.14"
+tonic-prost = "0.14"
