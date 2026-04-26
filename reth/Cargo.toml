@@ -1,0 +1,42 @@
+[package]
+name = "reth-exex-indexer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+exclude.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# reth
+reth-chainspec.workspace = true
+reth-execution-types.workspace = true
+reth-ethereum = { workspace = true, features = ["full", "cli"] }
+reth-primitives-traits.workspace = true
+
+# alloy
+alloy-consensus.workspace = true
+alloy-eips.workspace = true
+alloy-primitives.workspace = true
+
+# async
+futures.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
+tokio-stream.workspace = true
+
+# grpc
+prost = "0.14.3"
+tonic = "0.14.5"
+tonic-prost = "0.14.5"
+
+# misc
+eyre.workspace = true
+tracing.workspace = true
+
+[[bin]]
+name = "exex-indexer"
+path = "src/exex.rs"
