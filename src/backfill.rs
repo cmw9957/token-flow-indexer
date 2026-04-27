@@ -33,6 +33,10 @@ pub trait BackfillSource {
 }
 
 impl BackfillSource for RpcBackfillClient {
+    /// Purpose: JSON-RPC에서 block과 receipt를 조회해 proto block으로 변환
+    /// Param:
+    /// - `chain_id`: chain_id 값
+    /// - `block_number`: 조회할 block_number
     async fn fetch_block(&self, chain_id: i32, block_number: i64) -> Result<Block> {
         let block = self.fetch_rpc_block(block_number).await?;
         let receipts = self.fetch_receipts(&block.transactions).await?;
@@ -42,6 +46,10 @@ impl BackfillSource for RpcBackfillClient {
 }
 
 impl RpcBackfillClient {
+    /// Purpose: eth_getBlockByNumber로 transaction 포함 block 조회
+    /// Param:
+    /// - `self`: RpcBackfillClient
+    /// - `block_number`: 조회할 block_number
     async fn fetch_rpc_block(&self, block_number: i64) -> Result<RpcBlock> {
         let result = self
             .send_single(
@@ -60,6 +68,10 @@ impl RpcBackfillClient {
             .map_err(|error| AppError::with_source("failed to decode backfill block", error))
     }
 
+    /// Purpose: transaction 목록의 receipt를 batch JSON-RPC로 조회
+    /// Param:
+    /// - `self`: RpcBackfillClient
+    /// - `transactions`: receipt 조회 대상 transaction 목록
     async fn fetch_receipts(&self, transactions: &[RpcTransaction]) -> Result<Vec<RpcReceipt>> {
         if transactions.is_empty() {
             return Ok(Vec::new());
@@ -114,6 +126,11 @@ impl RpcBackfillClient {
             .collect()
     }
 
+    /// Purpose: 단건 JSON-RPC 요청 전송 후 result 반환
+    /// Param:
+    /// - `self`: RpcBackfillClient
+    /// - `method`: JSON-RPC method
+    /// - `params`: JSON-RPC params
     async fn send_single(&self, method: &'static str, params: Value) -> Result<Value> {
         let response = self
             .http
@@ -146,6 +163,11 @@ impl RpcBackfillClient {
     }
 }
 
+/// Purpose: RPC block과 receipts를 proto Block으로 변환
+/// Param:
+/// - `chain_id`: chain_id 값
+/// - `block`: RPC block
+/// - `receipts`: block transaction 순서와 같은 receipts
 fn rpc_block_to_proto(chain_id: i32, block: RpcBlock, receipts: Vec<RpcReceipt>) -> Result<Block> {
     if block.transactions.len() != receipts.len() {
         return Err(AppError::msg(format!(
@@ -173,6 +195,10 @@ fn rpc_block_to_proto(chain_id: i32, block: RpcBlock, receipts: Vec<RpcReceipt>)
     })
 }
 
+/// Purpose: RPC transaction과 receipt를 proto Transaction으로 변환
+/// Param:
+/// - `transaction`: RPC transaction
+/// - `receipt`: transaction receipt
 fn rpc_transaction_to_proto(
     transaction: RpcTransaction,
     receipt: RpcReceipt,
@@ -197,6 +223,9 @@ fn rpc_transaction_to_proto(
     })
 }
 
+/// Purpose: RPC log를 proto Log로 변환
+/// Param:
+/// - `log`: RPC log
 fn rpc_log_to_proto(log: RpcLog) -> Result<Log> {
     Ok(Log {
         index: u32::try_from(hex_u64(&log.log_index)?)
@@ -211,11 +240,18 @@ fn rpc_log_to_proto(log: RpcLog) -> Result<Log> {
     })
 }
 
+/// Purpose: 0x hex 문자열을 u64로 변환
+/// Param:
+/// - `value`: 변환할 0x hex 문자열
 fn hex_u64(value: &str) -> Result<u64> {
     u64::from_str_radix(strip_0x(value)?, 16)
         .map_err(|error| AppError::with_source("failed to parse hex u64", error))
 }
 
+/// Purpose: 0x hex 문자열을 고정 길이 byte 배열로 변환
+/// Param:
+/// - `value`: 변환할 0x hex 문자열
+/// - `expected_len`: 기대 byte 길이
 fn hex_bytes_fixed(value: &str, expected_len: usize) -> Result<Vec<u8>> {
     let bytes = hex_bytes(value)?;
     if bytes.len() != expected_len {
@@ -227,6 +263,9 @@ fn hex_bytes_fixed(value: &str, expected_len: usize) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Purpose: 0x hex 문자열을 byte 배열로 변환
+/// Param:
+/// - `value`: 변환할 0x hex 문자열
 fn hex_bytes(value: &str) -> Result<Vec<u8>> {
     let hex = strip_0x(value)?;
     if hex.len() % 2 != 0 {
@@ -247,6 +286,9 @@ fn hex_bytes(value: &str) -> Result<Vec<u8>> {
         .collect()
 }
 
+/// Purpose: 0x prefix 제거
+/// Param:
+/// - `value`: 0x prefix 필요 value
 fn strip_0x(value: &str) -> Result<&str> {
     value
         .strip_prefix("0x")
