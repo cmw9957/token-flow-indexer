@@ -95,10 +95,9 @@ mod tests {
     #[test]
     fn new_stores_endpoint_and_reconnect_delay() {
         // subscriber 생성값 검증
-        let subscriber =
-            RemoteSubscriber::new("https://mev-dashboard.ddns.net:443", Duration::from_secs(5));
+        let subscriber = RemoteSubscriber::new("remote-indexer-endpoint", Duration::from_secs(5));
 
-        assert_eq!(subscriber.endpoint, "https://mev-dashboard.ddns.net:443");
+        assert_eq!(subscriber.endpoint, "remote-indexer-endpoint");
         assert_eq!(subscriber.reconnect_delay, Duration::from_secs(5));
         assert!(!subscriber.logged_subscribed.load(Ordering::Relaxed));
     }

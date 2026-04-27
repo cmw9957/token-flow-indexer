@@ -14,7 +14,7 @@
 - `psql`, `createdb` CLI
 - 접근 가능한 `RemoteIndexer` gRPC endpoint
 
-Rust edition 2024를 사용하므로 Rust 1.85 이상이 필요합니다.
+Rust edition 2024를 사용하므로 Rust 1.85 이상이 필요합니다. 먼저 설치 여부를 확인합니다.
 
 ```bash
 rustc --version
@@ -25,7 +25,26 @@ Rust가 없다면 `rustup`으로 설치합니다.
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+설치가 끝나면 현재 shell에 Cargo 환경을 반영합니다.
+
+```bash
+source "$HOME/.cargo/env"
+```
+
+stable toolchain을 사용하도록 설정합니다.
+
+```bash
 rustup default stable
+rustup update stable
+```
+
+다시 버전을 확인합니다.
+
+```bash
+rustc --version
+cargo --version
 ```
 
 PostgreSQL은 로컬 DB를 사용할 경우 설치되어 있어야 합니다.
@@ -50,7 +69,8 @@ PostgreSQL 데이터베이스를 만들고 마이그레이션을 적용합니다
 
 ```bash
 createdb token_flow_indexer
-psql postgres://localhost/token_flow_indexer -f migrations/0001_init.sql
+export DATABASE_URL='postgres:///token_flow_indexer'
+psql "$DATABASE_URL" -f migrations/0001_init.sql
 ```
 
 이미 사용할 데이터베이스가 있다면 `DATABASE_URL`에 맞는 DB에 `migrations/0001_init.sql`만 적용하면 됩니다.
@@ -60,11 +80,11 @@ psql postgres://localhost/token_flow_indexer -f migrations/0001_init.sql
 루트 인덱서를 실행하기 전에 다음 환경변수를 설정합니다.
 
 ```bash
-export DATABASE_URL=postgres://localhost/token_flow_indexer
+export DATABASE_URL='postgres:///token_flow_indexer'
 export CHAIN_ID=1
 export CHAIN_NAME=ethereum
-export EXEX_INDEXER_GRPC_ENDPOINT='https://mev-dashboard.ddns.net:443'
-export BACKFILL_RPC_URL='https://mev-dashboard.ddns.net/rpc'
+export EXEX_INDEXER_GRPC_ENDPOINT='<REMOTE_INDEXER_ENDPOINT>'
+export BACKFILL_RPC_URL='<RPC_ENDPOINT>'
 export EXEX_RECONNECT_DELAY_SECS=3
 ```
 
@@ -72,12 +92,12 @@ export EXEX_RECONNECT_DELAY_SECS=3
 
 - `DATABASE_URL`: PostgreSQL 연결 문자열
 - `CHAIN_ID`: 인덱싱할 체인 ID. Ethereum mainnet은 `1`입니다.
+- `EXEX_INDEXER_GRPC_ENDPOINT`: reth ExEx gRPC endpoint
+- `BACKFILL_RPC_URL`: gap 발생 시 누락 블록을 조회할 JSON-RPC endpoint
 
 선택 값:
 
 - `CHAIN_NAME`: 체인 이름입니다. 기본값은 `ethereum`입니다.
-- `EXEX_INDEXER_GRPC_ENDPOINT`: reth ExEx gRPC endpoint입니다. 외부 nginx 443 gRPC 프록시를 사용할 때는 `https://mev-dashboard.ddns.net:443`처럼 endpoint만 지정합니다. gRPC path인 `/exex.indexer.RemoteIndexer/Subscribe`는 코드에 고정되어 있어 URL에 붙이지 않습니다. 설정하지 않으면 기본값은 `http://[::1]:10000`입니다.
-- `BACKFILL_RPC_URL`: gap 발생 시 누락 블록을 조회할 JSON-RPC endpoint입니다. 설정하지 않으면 기본값은 `https://mev-dashboard.ddns.net/rpc`입니다.
 - `EXEX_RECONNECT_DELAY_SECS`: gRPC 연결 실패 후 재시도 대기 시간입니다. 기본값은 `3`초입니다.
 
 ## 인덱서 실행
@@ -94,13 +114,13 @@ checkpoint와 새 notification 사이에 gap이 있으면 `BACKFILL_RPC_URL`로 
 
 ```bash
 createdb token_flow_indexer
-psql postgres://localhost/token_flow_indexer -f migrations/0001_init.sql
+export DATABASE_URL='postgres:///token_flow_indexer'
+psql "$DATABASE_URL" -f migrations/0001_init.sql
 
-export DATABASE_URL='postgres://localhost/token_flow_indexer'
 export CHAIN_ID=1
 export CHAIN_NAME=ethereum
-export EXEX_INDEXER_GRPC_ENDPOINT='https://mev-dashboard.ddns.net:443'
-export BACKFILL_RPC_URL='https://mev-dashboard.ddns.net/rpc'
+export EXEX_INDEXER_GRPC_ENDPOINT='<REMOTE_INDEXER_ENDPOINT>'
+export BACKFILL_RPC_URL='<RPC_ENDPOINT>'
 
 cargo run
 ```
@@ -114,6 +134,14 @@ cargo run
 `missing required environment variable CHAIN_ID`:
 
 `CHAIN_ID` 환경변수가 설정되지 않았습니다.
+
+`missing required environment variable EXEX_INDEXER_GRPC_ENDPOINT`:
+
+`EXEX_INDEXER_GRPC_ENDPOINT` 환경변수가 설정되지 않았습니다.
+
+`missing required environment variable BACKFILL_RPC_URL`:
+
+`BACKFILL_RPC_URL` 환경변수가 설정되지 않았습니다.
 
 `failed to connect to postgres`:
 

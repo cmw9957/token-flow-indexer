@@ -1,7 +1,5 @@
 use std::{env, time::Duration};
 
-const DEFAULT_EXEX_ENDPOINT: &str = "http://[::1]:10000";
-const DEFAULT_BACKFILL_RPC_URL: &str = "https://mev-dashboard.ddns.net/rpc";
 const DEFAULT_CHAIN_NAME: &str = "ethereum";
 const DEFAULT_RECONNECT_DELAY_SECS: u64 = 3;
 
@@ -20,10 +18,8 @@ impl Config {
     /// Param: None
     pub fn from_env() -> Result<Self, ConfigError> {
         let database_url = required_env("DATABASE_URL")?;
-        let exex_endpoint =
-            env::var("EXEX_INDEXER_GRPC_ENDPOINT").unwrap_or_else(|_| DEFAULT_EXEX_ENDPOINT.into());
-        let backfill_rpc_url =
-            env::var("BACKFILL_RPC_URL").unwrap_or_else(|_| DEFAULT_BACKFILL_RPC_URL.into());
+        let exex_endpoint = required_env("EXEX_INDEXER_GRPC_ENDPOINT")?;
+        let backfill_rpc_url = required_env("BACKFILL_RPC_URL")?;
         let chain_id = parse_required_env("CHAIN_ID")?;
         let chain_name = env::var("CHAIN_NAME").unwrap_or_else(|_| DEFAULT_CHAIN_NAME.into());
         let reconnect_delay_secs =
