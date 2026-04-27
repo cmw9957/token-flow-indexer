@@ -9,9 +9,40 @@
 
 ## 요구 사항
 
-- Rust toolchain
-- PostgreSQL
+- Rust 1.85 이상
+- PostgreSQL 14 이상
+- `psql`, `createdb` CLI
 - 접근 가능한 `RemoteIndexer` gRPC endpoint
+
+Rust edition 2024를 사용하므로 Rust 1.85 이상이 필요합니다.
+
+```bash
+rustc --version
+cargo --version
+```
+
+Rust가 없다면 `rustup`으로 설치합니다.
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup default stable
+```
+
+PostgreSQL은 로컬 DB를 사용할 경우 설치되어 있어야 합니다.
+
+macOS Homebrew 예시:
+
+```bash
+brew install postgresql@18
+brew services start postgresql@18
+```
+
+설치 확인:
+
+```bash
+psql --version
+createdb --version
+```
 
 ## 데이터베이스 준비
 
