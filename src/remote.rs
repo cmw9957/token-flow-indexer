@@ -75,3 +75,18 @@ impl RemoteSubscriber {
         Err(AppError::msg("remote ExEx stream ended"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_stores_endpoint_and_reconnect_delay() {
+        // subscriber 생성값 검증
+        let subscriber =
+            RemoteSubscriber::new("https://mev-dashboard.ddns.net:443", Duration::from_secs(5));
+
+        assert_eq!(subscriber.endpoint, "https://mev-dashboard.ddns.net:443");
+        assert_eq!(subscriber.reconnect_delay, Duration::from_secs(5));
+    }
+}

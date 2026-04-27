@@ -167,3 +167,65 @@ pub mod remote_indexer_client {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use prost::Message;
+
+    use super::*;
+
+    #[test]
+    fn notification_kind_converts_from_wire_value() {
+        // notification kind wire value 검증
+        assert_eq!(
+            ExExNotificationKind::try_from(1).unwrap(),
+            ExExNotificationKind::ChainCommitted
+        );
+        assert!(ExExNotificationKind::try_from(99).is_err());
+    }
+
+    #[test]
+    fn exex_notification_round_trips_through_protobuf_encoding() {
+        // protobuf encode/decode 검증
+        let notification = ExExNotification {
+            kind: ExExNotificationKind::ChainCommitted as i32,
+            old_range: None,
+            new_range: Some(BlockRange {
+                first: 10,
+                last: 10,
+            }),
+            fork_block: None,
+            tip_block: Some(BlockRef {
+                number: 10,
+                hash: vec![1; 32],
+            }),
+            new_blocks: vec![Block {
+                number: 10,
+                hash: vec![1; 32],
+                parent_hash: vec![2; 32],
+                timestamp: 1_700_000_000,
+                transactions: vec![Transaction {
+                    hash: vec![3; 32],
+                    index: 0,
+                    from: vec![4; 20],
+                    to: Some(vec![5; 20]),
+                    value_raw: "1".to_owned(),
+                    logs: vec![Log {
+                        index: 0,
+                        contract_address: vec![6; 20],
+                        topics: vec![vec![7; 32]],
+                        data: vec![8, 9],
+                    }],
+                }],
+                chain_id: 1,
+            }],
+            chain_id: 1,
+        };
+
+        let mut bytes = Vec::new();
+        notification.encode(&mut bytes).unwrap();
+        let decoded = ExExNotification::decode(bytes.as_slice()).unwrap();
+
+        assert_eq!(decoded, notification);
+    }
+}

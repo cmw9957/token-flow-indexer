@@ -23,11 +23,7 @@ async fn main() -> Result<()> {
         .map_err(|error| AppError::with_source("failed to load configuration", error))?;
 
     let store = PostgresStore::connect(&config.database_url).await?;
-    let processor = Arc::new(Processor::new(
-        store,
-        config.chain_id,
-        config.chain_name,
-    ));
+    let processor = Arc::new(Processor::new(store, config.chain_id, config.chain_name));
     processor.initialize().await?;
 
     let subscriber = RemoteSubscriber::new(config.exex_endpoint, config.reconnect_delay);

@@ -209,3 +209,41 @@ impl fmt::Display for ParseEnumError {
 }
 
 impl std::error::Error for ParseEnumError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_type_round_trips_db_values() {
+        // SourceType DB 문자열 변환 검증
+        assert_eq!(SourceType::TxValue.as_str(), "TX_VALUE");
+        assert_eq!(SourceType::TxValue.to_string(), "TX_VALUE");
+        assert_eq!("LOG".parse::<SourceType>().unwrap(), SourceType::Log);
+    }
+
+    #[test]
+    fn asset_type_round_trips_db_values() {
+        // AssetType DB 문자열 변환 검증
+        assert_eq!(AssetType::Native.as_str(), "NATIVE");
+        assert_eq!(AssetType::Erc20.to_string(), "ERC20");
+        assert_eq!("ERC721".parse::<AssetType>().unwrap(), AssetType::Erc721);
+        assert_eq!("ERC1155".parse::<AssetType>().unwrap(), AssetType::Erc1155);
+    }
+
+    #[test]
+    fn sync_status_round_trips_db_values() {
+        // SyncStatus DB 문자열 변환 검증
+        assert_eq!(SyncStatus::Idle.as_str(), "IDLE");
+        assert_eq!(SyncStatus::Syncing.to_string(), "SYNCING");
+        assert_eq!("ERROR".parse::<SyncStatus>().unwrap(), SyncStatus::Error);
+    }
+
+    #[test]
+    fn enum_parse_errors_include_enum_name_and_value() {
+        // enum 파싱 에러 메시지 검증
+        let error = "BAD".parse::<AssetType>().unwrap_err();
+
+        assert_eq!(error.to_string(), "unknown AssetType value \"BAD\"");
+    }
+}

@@ -84,3 +84,34 @@ pub trait Store {
         checkpoint: SyncCheckpoint,
     ) -> Result<()>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn block_range_accepts_valid_inclusive_range() {
+        // 정상 블록 범위 검증
+        let range = BlockRange::new(10, 12).unwrap();
+
+        assert_eq!(range.from_block, 10);
+        assert_eq!(range.to_block, 12);
+    }
+
+    #[test]
+    fn block_range_accepts_single_block_range() {
+        // 단일 블록 범위 검증
+        let range = BlockRange::new(10, 10).unwrap();
+
+        assert_eq!(range.from_block, 10);
+        assert_eq!(range.to_block, 10);
+    }
+
+    #[test]
+    fn block_range_rejects_inverted_range() {
+        // 역전된 블록 범위 거부 검증
+        let error = BlockRange::new(12, 10).unwrap_err();
+
+        assert!(error.to_string().contains("invalid block range"));
+    }
+}

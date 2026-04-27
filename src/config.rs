@@ -127,3 +127,45 @@ where
             message: error.to_string(),
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_env_value_converts_to_target_type() {
+        // 타입 변환 검증
+        let value = parse_env_value::<i32>("CHAIN_ID", "1".to_owned()).unwrap();
+
+        assert_eq!(value, 1);
+    }
+
+    #[test]
+    fn parse_env_value_reports_invalid_input() {
+        // 잘못된 환경변수 검증
+        let error = parse_env_value::<i32>("CHAIN_ID", "mainnet".to_owned()).unwrap_err();
+
+        assert!(matches!(
+            error,
+            ConfigError::InvalidEnv {
+                name: "CHAIN_ID",
+                ..
+            }
+        ));
+        assert!(error.to_string().contains("CHAIN_ID"));
+        assert!(error.to_string().contains("mainnet"));
+    }
+
+    #[test]
+    fn config_error_formats_missing_required_env() {
+        // 필수 환경변수 누락 메시지 검증
+        let error = ConfigError::MissingEnv {
+            name: "DATABASE_URL",
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "missing required environment variable DATABASE_URL"
+        );
+    }
+}

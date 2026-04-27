@@ -72,3 +72,36 @@ impl From<&str> for AppError {
         Self::msg(message)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error as _;
+
+    use super::*;
+
+    #[test]
+    fn msg_creates_displayable_error_without_source() {
+        // 단순 에러 메시지 검증
+        let error = AppError::msg("failed");
+
+        assert_eq!(error.to_string(), "failed");
+        assert!(error.source().is_none());
+    }
+
+    #[test]
+    fn with_source_preserves_display_message_and_source() {
+        // 원인 에러 보존 검증
+        let source = std::io::Error::other("io failed");
+        let error = AppError::with_source("wrapper failed", source);
+
+        assert_eq!(error.to_string(), "wrapper failed");
+        assert_eq!(error.source().unwrap().to_string(), "io failed");
+    }
+
+    #[test]
+    fn string_conversions_create_message_error() {
+        // 문자열 에러 변환 검증
+        assert_eq!(AppError::from("borrowed").to_string(), "borrowed");
+        assert_eq!(AppError::from("owned".to_owned()).to_string(), "owned");
+    }
+}

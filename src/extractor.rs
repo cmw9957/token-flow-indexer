@@ -535,7 +535,83 @@ mod tests {
     use super::*;
 
     #[test]
+    fn extract_block_emits_native_movement_from_transaction_value() {
+        // native ETH 이동 추출 검증
+        let block = RawBlock {
+            chain_id: 1,
+            block_number: 10,
+            block_hash: format!("0x{}", "11".repeat(32)),
+            parent_hash: format!("0x{}", "22".repeat(32)),
+            block_timestamp: "1700000000".to_owned(),
+            transactions: vec![RawTransaction {
+                tx_hash: format!("0x{}", "33".repeat(32)),
+                tx_index: 0,
+                from_address: format!("0x{}", "44".repeat(20)),
+                to_address: Some(format!("0x{}", "55".repeat(20))),
+                value_raw: "0x0a".to_owned(),
+                logs: Vec::new(),
+            }],
+        };
+
+        let indexed = Extractor::extract_block(block).unwrap();
+
+        assert_eq!(indexed.record.movement_count, 1);
+        assert_eq!(indexed.movements.len(), 1);
+        assert_eq!(indexed.movements[0].source_type, SourceType::TxValue);
+        assert_eq!(indexed.movements[0].asset_type, AssetType::Native);
+        assert_eq!(indexed.movements[0].amount_raw, "10");
+    }
+
+    #[test]
+    fn extract_block_emits_erc20_transfer_movement_from_log() {
+        // ERC20 Transfer 로그 추출 검증
+        let from_address = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let to_address = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let block = RawBlock {
+            chain_id: 1,
+            block_number: 10,
+            block_hash: format!("0x{}", "11".repeat(32)),
+            parent_hash: format!("0x{}", "22".repeat(32)),
+            block_timestamp: "1700000000".to_owned(),
+            transactions: vec![RawTransaction {
+                tx_hash: format!("0x{}", "33".repeat(32)),
+                tx_index: 0,
+                from_address: format!("0x{}", "44".repeat(20)),
+                to_address: Some(format!("0x{}", "55".repeat(20))),
+                value_raw: "0".to_owned(),
+                logs: vec![RawLog {
+                    log_index: 7,
+                    contract_address: format!("0x{}", "66".repeat(20)),
+                    topics: vec![
+                        TRANSFER_TOPIC.to_owned(),
+                        format!("0x{}{}", "00".repeat(12), from_address),
+                        format!("0x{}{}", "00".repeat(12), to_address),
+                    ],
+                    data: format!("0x{}05", "0".repeat(62)),
+                }],
+            }],
+        };
+
+        let indexed = Extractor::extract_block(block).unwrap();
+
+        assert_eq!(indexed.record.movement_count, 1);
+        assert_eq!(indexed.movements[0].source_type, SourceType::Log);
+        assert_eq!(indexed.movements[0].asset_type, AssetType::Erc20);
+        assert_eq!(
+            indexed.movements[0].from_address,
+            format!("0x{from_address}")
+        );
+        assert_eq!(
+            indexed.movements[0].to_address,
+            Some(format!("0x{to_address}"))
+        );
+        assert_eq!(indexed.movements[0].amount_raw, "5");
+        assert_eq!(indexed.movements[0].log_index, Some(7));
+    }
+
+    #[test]
     fn normalize_uint_accepts_abi_word_without_0x() {
+        // 0x 없는 ABI uint word 검증
         let value = "00000000000000000000000000000000000000000000000000000000d6343529";
 
         assert_eq!(normalize_uint(value).unwrap(), "3593745705");
@@ -543,11 +619,13 @@ mod tests {
 
     #[test]
     fn normalize_uint_keeps_decimal_values_decimal() {
+        // decimal uint 정규화 검증
         assert_eq!(normalize_uint("000123").unwrap(), "123");
     }
 
     #[test]
     fn hex_word_to_decimal_accepts_optional_0x() {
+        // optional 0x hex 변환 검증
         assert_eq!(hex_word_to_decimal("0x0a").unwrap(), "10");
         assert_eq!(hex_word_to_decimal("0a").unwrap(), "10");
     }
