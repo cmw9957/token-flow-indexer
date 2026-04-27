@@ -367,8 +367,16 @@ fn normalize_uint(value: &str) -> Result<String> {
         return hex_word_to_decimal(strip_0x(value)?);
     }
 
+    if value.len() == 64 && value.chars().all(|char| char.is_ascii_hexdigit()) {
+        return hex_word_to_decimal(value);
+    }
+
     if value.chars().all(|char| char.is_ascii_digit()) {
         return Ok(trim_decimal_zeros(value));
+    }
+
+    if value.chars().all(|char| char.is_ascii_hexdigit()) {
+        return hex_word_to_decimal(value);
     }
 
     Err(AppError::msg(format!("invalid uint value {value:?}")))
@@ -378,7 +386,7 @@ fn normalize_uint(value: &str) -> Result<String> {
 /// Param:
 /// - `word`: hex word
 fn hex_word_to_usize(word: &str) -> Result<usize> {
-    usize::from_str_radix(strip_0x(word)?, 16)
+    usize::from_str_radix(strip_optional_0x(word), 16)
         .map_err(|error| AppError::with_source("failed to parse uint word as usize", error))
 }
 
@@ -386,7 +394,7 @@ fn hex_word_to_usize(word: &str) -> Result<usize> {
 /// Param:
 /// - `hex`: hex uint
 fn hex_word_to_decimal(hex: &str) -> Result<String> {
-    let hex = strip_0x(hex)?;
+    let hex = strip_optional_0x(hex);
     if hex.is_empty() {
         return Ok("0".to_owned());
     }
@@ -500,6 +508,16 @@ fn strip_0x(value: &str) -> Result<&str> {
         .ok_or_else(|| AppError::msg(format!("hex value must start with 0x: {value:?}")))
 }
 
+/// Purpose: optional 0x prefix 제거
+/// Param:
+/// - `value`: 0x prefix가 있거나 없는 hex value
+fn strip_optional_0x(value: &str) -> &str {
+    value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .unwrap_or(value)
+}
+
 /// Purpose: decimal 문자열의 앞쪽 0 제거
 /// Param:
 /// - `value`: 정리할 decimal value
@@ -509,5 +527,28 @@ fn trim_decimal_zeros(value: &str) -> String {
         "0".to_owned()
     } else {
         trimmed.to_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_uint_accepts_abi_word_without_0x() {
+        let value = "00000000000000000000000000000000000000000000000000000000d6343529";
+
+        assert_eq!(normalize_uint(value).unwrap(), "3593745705");
+    }
+
+    #[test]
+    fn normalize_uint_keeps_decimal_values_decimal() {
+        assert_eq!(normalize_uint("000123").unwrap(), "123");
+    }
+
+    #[test]
+    fn hex_word_to_decimal_accepts_optional_0x() {
+        assert_eq!(hex_word_to_decimal("0x0a").unwrap(), "10");
+        assert_eq!(hex_word_to_decimal("0a").unwrap(), "10");
     }
 }
