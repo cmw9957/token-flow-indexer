@@ -33,7 +33,8 @@ psql postgres://localhost/token_flow_indexer -f migrations/0001_init.sql
 export DATABASE_URL=postgres://localhost/token_flow_indexer
 export CHAIN_ID=1
 export CHAIN_NAME=ethereum
-export EXEX_INDEXER_GRPC_ENDPOINT='http://mev-dashboard.ddns.net:10000'
+export EXEX_INDEXER_GRPC_ENDPOINT='https://mev-dashboard.ddns.net:443'
+export EXEX_RECONNECT_DELAY_SECS=3
 ```
 
 필수 값:
@@ -44,7 +45,7 @@ export EXEX_INDEXER_GRPC_ENDPOINT='http://mev-dashboard.ddns.net:10000'
 선택 값:
 
 - `CHAIN_NAME`: 체인 이름입니다. 기본값은 `ethereum`입니다.
-- `EXEX_INDEXER_GRPC_ENDPOINT`: reth ExEx gRPC endpoint입니다. 예시는 `http://mev-dashboard.ddns.net:10000`입니다. 설정하지 않으면 기본값은 `http://[::1]:10000`입니다.
+- `EXEX_INDEXER_GRPC_ENDPOINT`: reth ExEx gRPC endpoint입니다. 외부 nginx 443 gRPC 프록시를 사용할 때는 `https://mev-dashboard.ddns.net:443`처럼 endpoint만 지정합니다. gRPC path인 `/exex.indexer.RemoteIndexer/Subscribe`는 코드에 고정되어 있어 URL에 붙이지 않습니다. 설정하지 않으면 기본값은 `http://[::1]:10000`입니다.
 - `EXEX_RECONNECT_DELAY_SECS`: gRPC 연결 실패 후 재시도 대기 시간입니다. 기본값은 `3`초입니다.
 
 ## 인덱서 실행
@@ -56,6 +57,20 @@ cargo run
 ```
 
 인덱서는 `EXEX_INDEXER_GRPC_ENDPOINT`에 연결해 ExEx 알림 스트림을 구독합니다. 연결이 끊기면 `EXEX_RECONNECT_DELAY_SECS` 간격으로 재연결을 시도합니다.
+
+로컬 DB를 쓰는 외부 실행 예시는 다음과 같습니다.
+
+```bash
+createdb token_flow_indexer
+psql postgres://localhost/token_flow_indexer -f migrations/0001_init.sql
+
+export DATABASE_URL='postgres://localhost/token_flow_indexer'
+export CHAIN_ID=1
+export CHAIN_NAME=ethereum
+export EXEX_INDEXER_GRPC_ENDPOINT='https://mev-dashboard.ddns.net:443'
+
+cargo run
+```
 
 ## reth ExEx 서버 실행
 
