@@ -64,6 +64,7 @@ export DATABASE_URL=postgres://localhost/token_flow_indexer
 export CHAIN_ID=1
 export CHAIN_NAME=ethereum
 export EXEX_INDEXER_GRPC_ENDPOINT='https://mev-dashboard.ddns.net:443'
+export BACKFILL_RPC_URL='https://mev-dashboard.ddns.net/rpc'
 export EXEX_RECONNECT_DELAY_SECS=3
 ```
 
@@ -76,6 +77,7 @@ export EXEX_RECONNECT_DELAY_SECS=3
 
 - `CHAIN_NAME`: 체인 이름입니다. 기본값은 `ethereum`입니다.
 - `EXEX_INDEXER_GRPC_ENDPOINT`: reth ExEx gRPC endpoint입니다. 외부 nginx 443 gRPC 프록시를 사용할 때는 `https://mev-dashboard.ddns.net:443`처럼 endpoint만 지정합니다. gRPC path인 `/exex.indexer.RemoteIndexer/Subscribe`는 코드에 고정되어 있어 URL에 붙이지 않습니다. 설정하지 않으면 기본값은 `http://[::1]:10000`입니다.
+- `BACKFILL_RPC_URL`: gap 발생 시 누락 블록을 조회할 JSON-RPC endpoint입니다. 설정하지 않으면 기본값은 `https://mev-dashboard.ddns.net/rpc`입니다.
 - `EXEX_RECONNECT_DELAY_SECS`: gRPC 연결 실패 후 재시도 대기 시간입니다. 기본값은 `3`초입니다.
 
 ## 인덱서 실행
@@ -85,6 +87,8 @@ cargo run
 ```
 
 인덱서는 `EXEX_INDEXER_GRPC_ENDPOINT`에 연결해 ExEx 알림 스트림을 구독합니다. 연결이 끊기면 `EXEX_RECONNECT_DELAY_SECS` 간격으로 재연결을 시도합니다.
+
+checkpoint와 새 notification 사이에 gap이 있으면 `BACKFILL_RPC_URL`로 누락 블록을 조회해 먼저 저장한 뒤 stream block 처리를 이어갑니다.
 
 로컬 DB를 쓰는 외부 실행 예시는 다음과 같습니다.
 
@@ -96,6 +100,7 @@ export DATABASE_URL='postgres://localhost/token_flow_indexer'
 export CHAIN_ID=1
 export CHAIN_NAME=ethereum
 export EXEX_INDEXER_GRPC_ENDPOINT='https://mev-dashboard.ddns.net:443'
+export BACKFILL_RPC_URL='https://mev-dashboard.ddns.net/rpc'
 
 cargo run
 ```

@@ -1,4 +1,5 @@
 use crate::{
+    backfill::BackfillSource,
     db::{BlockRange, Store},
     error::{AppError, Result},
     extractor::{Extractor, RawBlock, RawLog, RawTransaction},
@@ -7,24 +8,36 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct Processor<S> {
+pub struct Processor<S, B> {
     store: S,
+    backfill: B,
     chain_id: i32,
     chain_name: String,
 }
 
-impl<S> Processor<S>
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Gap {
+    last_indexed_block: i64,
+    first_new_block: i64,
+    from_block: i64,
+    to_block: i64,
+}
+
+impl<S, B> Processor<S, B>
 where
     S: Store,
+    B: BackfillSource,
 {
     /// Purpose: notification Processor 생성
     /// Param:
     /// - `store`: DB store
+    /// - `backfill`: gap backfill source
     /// - `chain_id`: chain_id 값 (e.g. Ethereum : 1)
     /// - `chain_name`: chain_name 값 (e.g. Mainnet)
-    pub fn new(store: S, chain_id: i32, chain_name: impl Into<String>) -> Self {
+    pub fn new(store: S, backfill: B, chain_id: i32, chain_name: impl Into<String>) -> Self {
         Self {
             store,
+            backfill,
             chain_id,
             chain_name: chain_name.into(),
         }
@@ -123,6 +136,7 @@ where
         tip_block: Option<BlockRef>,
     ) -> Result<()> {
         let tip_block = required_block_ref(tip_block, "tip_block")?;
+        self.backfill_gap_if_needed(&new_blocks).await?;
         self.ensure_contiguous(&new_blocks).await?;
 
         for block in new_blocks {
@@ -163,6 +177,102 @@ where
         self.store
             .save_checkpoint(tip_checkpoint(self.chain_id, tip_block)?)
             .await
+    }
+
+    /// Purpose: gap 발생 시 RPC backfill로 누락 블록 보충
+    /// Param:
+    /// - `self`: Processor
+    /// - `new_blocks`: gap 검사 대상 new_blocks
+    async fn backfill_gap_if_needed(&self, new_blocks: &[Block]) -> Result<()> {
+        let Some(gap) = self.detect_gap(new_blocks).await? else {
+            return Ok(());
+        };
+
+        println!(
+            "gap detected: checkpoint={} first_new_block={} backfill_range={}..{}",
+            gap.last_indexed_block, gap.first_new_block, gap.from_block, gap.to_block
+        );
+
+        for block_number in gap.from_block..=gap.to_block {
+            let block = self
+                .backfill
+                .fetch_block(self.chain_id, block_number)
+                .await?;
+            self.apply_backfill_block(block).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Purpose: backfill 블록 저장
+    /// Param:
+    /// - `self`: Processor
+    /// - `block`: backfill로 조회한 block
+    async fn apply_backfill_block(&self, block: Block) -> Result<()> {
+        if block.chain_id != self.chain_id as u64 {
+            return Err(AppError::msg(format!(
+                "backfill block chain_id {} does not match configured chain_id {}",
+                block.chain_id, self.chain_id
+            )));
+        }
+
+        self.ensure_contiguous(std::slice::from_ref(&block)).await?;
+
+        let indexed_block = Extractor::extract_block(raw_block(block)?)?;
+        let checkpoint = SyncCheckpoint {
+            chain_id: self.chain_id,
+            last_indexed_block: Some(indexed_block.record.block_number),
+            last_indexed_hash: Some(indexed_block.record.block_hash.clone()),
+            status: SyncStatus::Syncing,
+        };
+        let chain_id = indexed_block.record.chain_id;
+        let block_number = indexed_block.record.block_number;
+        let tx_count = indexed_block.record.tx_count;
+        let movement_count = indexed_block.record.movement_count;
+
+        self.store
+            .apply_block(indexed_block.record, indexed_block.movements, checkpoint)
+            .await?;
+
+        println!(
+            "block indexed: chain_id={} block={} txs={} movements={}",
+            chain_id, block_number, tx_count, movement_count
+        );
+
+        Ok(())
+    }
+
+    /// Purpose: checkpoint와 첫 새 블록 사이 gap 계산
+    /// Param:
+    /// - `self`: Processor
+    /// - `new_blocks`: gap 검사 대상 new_blocks
+    async fn detect_gap(&self, new_blocks: &[Block]) -> Result<Option<Gap>> {
+        let Some(first_block) = new_blocks.first() else {
+            return Ok(None);
+        };
+
+        let Some(checkpoint) = self.store.load_checkpoint(self.chain_id).await? else {
+            return Ok(None);
+        };
+
+        let Some(last_indexed_block) = checkpoint.last_indexed_block else {
+            return Ok(None);
+        };
+
+        let first_new_block = i64::try_from(first_block.number)
+            .map_err(|error| AppError::with_source("block number does not fit in i64", error))?;
+        let expected_next = last_indexed_block + 1;
+
+        if first_new_block <= expected_next {
+            return Ok(None);
+        }
+
+        Ok(Some(Gap {
+            last_indexed_block,
+            first_new_block,
+            from_block: expected_next,
+            to_block: first_new_block - 1,
+        }))
     }
 
     /// Purpose: 체크포인트와 첫 새 블록의 연속성 확인
@@ -439,6 +549,11 @@ mod tests {
         state: Arc<Mutex<MockState>>,
     }
 
+    #[derive(Debug, Clone, Default)]
+    struct MockBackfill {
+        blocks: Arc<Mutex<Vec<Block>>>,
+    }
+
     #[derive(Debug, Default)]
     struct MockState {
         chains: Vec<(i32, String)>,
@@ -497,11 +612,23 @@ mod tests {
         }
     }
 
+    impl BackfillSource for MockBackfill {
+        async fn fetch_block(&self, _chain_id: i32, block_number: i64) -> Result<Block> {
+            self.blocks
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|block| block.number == block_number as u64)
+                .cloned()
+                .ok_or_else(|| AppError::msg(format!("missing mock backfill block {block_number}")))
+        }
+    }
+
     #[tokio::test]
     async fn initialize_ensures_chain_and_sets_idle_status() {
         // 초기화 상태 갱신 검증
         let store = MockStore::default();
-        let processor = Processor::new(store.clone(), 1, "ethereum");
+        let processor = Processor::new(store.clone(), MockBackfill::default(), 1, "ethereum");
 
         processor.initialize().await.unwrap();
 
@@ -520,7 +647,7 @@ mod tests {
             last_indexed_hash: Some(hex_bytes(0x22, 32)),
             status: SyncStatus::Idle,
         });
-        let processor = Processor::new(store.clone(), 1, "ethereum");
+        let processor = Processor::new(store.clone(), MockBackfill::default(), 1, "ethereum");
 
         processor
             .process_remote_notification(committed_notification(10, 0x22, 0x11))
@@ -542,8 +669,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn committed_notification_reports_gap_and_sets_error_status() {
-        // gap 감지 검증
+    async fn committed_notification_backfills_gap_before_applying_stream_block() {
+        // gap backfill 검증
         let store = MockStore::default();
         store.state.lock().unwrap().checkpoint = Some(SyncCheckpoint {
             chain_id: 1,
@@ -551,24 +678,31 @@ mod tests {
             last_indexed_hash: Some(hex_bytes(0x22, 32)),
             status: SyncStatus::Idle,
         });
-        let processor = Processor::new(store.clone(), 1, "ethereum");
+        let backfill = MockBackfill::default();
+        backfill
+            .blocks
+            .lock()
+            .unwrap()
+            .push(proto_block(10, 0x22, 0x10));
+        let processor = Processor::new(store.clone(), backfill, 1, "ethereum");
 
-        let error = processor
-            .process_remote_notification(committed_notification(11, 0x22, 0x11))
+        processor
+            .process_remote_notification(committed_notification(11, 0x10, 0x11))
             .await
-            .unwrap_err();
+            .unwrap();
 
-        assert!(error.to_string().contains("gap detected"));
         let state = store.state.lock().unwrap();
-        assert_eq!(state.statuses, vec![SyncStatus::Syncing, SyncStatus::Error]);
-        assert!(state.applied_blocks.is_empty());
+        assert_eq!(state.statuses, vec![SyncStatus::Syncing, SyncStatus::Idle]);
+        assert_eq!(state.applied_blocks.len(), 2);
+        assert_eq!(state.applied_blocks[0].block_number, 10);
+        assert_eq!(state.applied_blocks[1].block_number, 11);
     }
 
     #[tokio::test]
     async fn reverted_notification_deletes_old_range_and_moves_checkpoint_to_fork() {
         // reverted checkpoint 이동 검증
         let store = MockStore::default();
-        let processor = Processor::new(store.clone(), 1, "ethereum");
+        let processor = Processor::new(store.clone(), MockBackfill::default(), 1, "ethereum");
 
         processor
             .process_remote_notification(ExExNotification {

@@ -1,4 +1,10 @@
-use std::time::Duration;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use tokio::time::sleep;
 
@@ -11,6 +17,7 @@ use crate::{
 pub struct RemoteSubscriber {
     endpoint: String,
     reconnect_delay: Duration,
+    logged_subscribed: Arc<AtomicBool>,
 }
 
 impl RemoteSubscriber {
@@ -22,6 +29,7 @@ impl RemoteSubscriber {
         Self {
             endpoint: endpoint.into(),
             reconnect_delay,
+            logged_subscribed: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -64,7 +72,9 @@ impl RemoteSubscriber {
             .map_err(|error| AppError::with_source("failed to subscribe to remote ExEx", error))?
             .into_inner();
 
-        println!("remote subscribed: endpoint={}", self.endpoint);
+        if !self.logged_subscribed.swap(true, Ordering::Relaxed) {
+            println!("remote subscribed: endpoint={}", self.endpoint);
+        }
 
         while let Some(notification) = stream
             .message()
@@ -90,5 +100,6 @@ mod tests {
 
         assert_eq!(subscriber.endpoint, "https://mev-dashboard.ddns.net:443");
         assert_eq!(subscriber.reconnect_delay, Duration::from_secs(5));
+        assert!(!subscriber.logged_subscribed.load(Ordering::Relaxed));
     }
 }

@@ -1,3 +1,4 @@
+mod backfill;
 mod config;
 mod db;
 mod error;
@@ -9,6 +10,7 @@ mod remote;
 
 use std::sync::Arc;
 
+use backfill::RpcBackfillClient;
 use config::Config;
 use db::postgres::PostgresStore;
 use error::{AppError, Result};
@@ -28,7 +30,13 @@ async fn main() -> Result<()> {
     );
 
     let store = PostgresStore::connect(&config.database_url).await?;
-    let processor = Arc::new(Processor::new(store, config.chain_id, config.chain_name));
+    let backfill = RpcBackfillClient::new(config.backfill_rpc_url);
+    let processor = Arc::new(Processor::new(
+        store,
+        backfill,
+        config.chain_id,
+        config.chain_name,
+    ));
     processor.initialize().await?;
 
     let subscriber = RemoteSubscriber::new(config.exex_endpoint, config.reconnect_delay);
