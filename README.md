@@ -5,14 +5,13 @@
 ## 구성
 
 - 루트 바이너리: `cargo run`으로 실행하는 인덱서입니다.
-- `reth/`: reth 노드에 붙여 실행하는 ExEx gRPC 서버 코드입니다. 기본 gRPC 주소는 `[::1]:10000`입니다.
 - `migrations/0001_init.sql`: PostgreSQL 테이블과 인덱스 생성 SQL입니다.
 
 ## 요구 사항
 
 - Rust toolchain
 - PostgreSQL
-- reth ExEx 서버 또는 호환되는 `RemoteIndexer` gRPC 서버
+- 접근 가능한 `RemoteIndexer` gRPC endpoint
 
 ## 데이터베이스 준비
 
@@ -50,8 +49,6 @@ export EXEX_RECONNECT_DELAY_SECS=3
 
 ## 인덱서 실행
 
-먼저 reth ExEx gRPC 서버가 떠 있어야 합니다. 서버가 준비된 뒤 루트에서 인덱서를 실행합니다.
-
 ```bash
 cargo run
 ```
@@ -70,37 +67,6 @@ export CHAIN_NAME=ethereum
 export EXEX_INDEXER_GRPC_ENDPOINT='https://mev-dashboard.ddns.net:443'
 
 cargo run
-```
-
-## reth ExEx 서버 실행
-
-`reth/` 디렉터리의 `exex-indexer` 바이너리는 reth 노드에 설치되는 ExEx 서버입니다.
-
-```bash
-export EXEX_INDEXER_GRPC_ADDR='[::1]:10000'
-```
-
-이 크레이트는 reth 워크스페이스 안에서 실행되는 것을 전제로 합니다. reth 쪽 실행 옵션은 사용하는 reth 노드 설정과 데이터 디렉터리에 맞춰 지정해야 합니다.
-
-기본 흐름은 다음과 같습니다.
-
-1. reth ExEx 서버를 실행해 gRPC endpoint를 엽니다.
-2. PostgreSQL DB와 스키마를 준비합니다.
-3. 루트 `token-flow-indexer`를 `cargo run`으로 실행합니다.
-
-## 동작 확인
-
-빌드 확인:
-
-```bash
-cargo check
-```
-
-DB 적재 확인 예시:
-
-```bash
-psql "$DATABASE_URL" -c "select * from sync_checkpoints;"
-psql "$DATABASE_URL" -c "select chain_id, block_number, tx_count, movement_count from blocks order by block_number desc limit 10;"
 ```
 
 ## 문제 해결
