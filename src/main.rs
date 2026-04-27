@@ -22,6 +22,11 @@ async fn main() -> Result<()> {
     let config = Config::from_env()
         .map_err(|error| AppError::with_source("failed to load configuration", error))?;
 
+    println!(
+        "indexer starting: chain_id={} chain_name={} endpoint={}",
+        config.chain_id, config.chain_name, config.exex_endpoint
+    );
+
     let store = PostgresStore::connect(&config.database_url).await?;
     let processor = Arc::new(Processor::new(store, config.chain_id, config.chain_name));
     processor.initialize().await?;

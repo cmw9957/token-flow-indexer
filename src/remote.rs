@@ -64,6 +64,8 @@ impl RemoteSubscriber {
             .map_err(|error| AppError::with_source("failed to subscribe to remote ExEx", error))?
             .into_inner();
 
+        println!("remote subscribed: endpoint={}", self.endpoint);
+
         while let Some(notification) = stream
             .message()
             .await

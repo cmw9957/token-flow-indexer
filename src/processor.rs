@@ -47,6 +47,22 @@ where
     /// - `self`: Processor
     /// - `notification`: remote ExEx notification
     pub async fn process_remote_notification(&self, notification: ExExNotification) -> Result<()> {
+        let notification_kind = ExExNotificationKind::try_from(notification.kind)
+            .map_err(|error| AppError::with_source("invalid ExEx notification kind", error))?;
+        let tip = notification
+            .tip_block
+            .as_ref()
+            .map(|block| block.number.to_string())
+            .unwrap_or_else(|| "none".to_owned());
+
+        println!(
+            "notification received: kind={} chain_id={} new_blocks={} tip={}",
+            notification_kind.as_log_str(),
+            notification.chain_id,
+            notification.new_blocks.len(),
+            tip
+        );
+
         if notification.chain_id != self.chain_id as u64 {
             return Err(AppError::msg(format!(
                 "notification chain_id {} does not match configured chain_id {}",
@@ -58,9 +74,7 @@ where
             .set_checkpoint_status(self.chain_id, SyncStatus::Syncing)
             .await?;
 
-        let result = match ExExNotificationKind::try_from(notification.kind)
-            .map_err(|error| AppError::with_source("invalid ExEx notification kind", error))?
-        {
+        let result = match notification_kind {
             ExExNotificationKind::Unknown => {
                 Err(AppError::msg("received unknown ExEx notification kind"))
             }
@@ -127,10 +141,19 @@ where
                 last_indexed_hash: Some(indexed_block.record.block_hash.clone()),
                 status: SyncStatus::Syncing,
             };
+            let chain_id = indexed_block.record.chain_id;
+            let block_number = indexed_block.record.block_number;
+            let tx_count = indexed_block.record.tx_count;
+            let movement_count = indexed_block.record.movement_count;
 
             self.store
                 .apply_block(indexed_block.record, indexed_block.movements, checkpoint)
                 .await?;
+
+            println!(
+                "block indexed: chain_id={} block={} txs={} movements={}",
+                chain_id, block_number, tx_count, movement_count
+            );
 
             if is_tip {
                 return Ok(());
@@ -371,6 +394,20 @@ fn hex_char(value: u8) -> char {
         0..=9 => (b'0' + value) as char,
         10..=15 => (b'a' + value - 10) as char,
         _ => unreachable!("nibble is always <= 15"),
+    }
+}
+
+impl ExExNotificationKind {
+    /// Purpose: notification kind 로그 문자열 반환
+    /// Param:
+    /// - `self`: 출력할 ExExNotificationKind
+    fn as_log_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "UNKNOWN",
+            Self::ChainCommitted => "CHAIN_COMMITTED",
+            Self::ChainReorged => "CHAIN_REORGED",
+            Self::ChainReverted => "CHAIN_REVERTED",
+        }
     }
 }
 
