@@ -195,22 +195,15 @@ where
             gap.last_indexed_block, gap.first_new_block, gap.from_block, gap.to_block
         );
 
-        let mut blocks = Vec::with_capacity(BACKFILL_APPLY_CHUNK_SIZE);
-        for block_number in gap.from_block..=gap.to_block {
-            let block = self
+        let mut from_block = gap.from_block;
+        while from_block <= gap.to_block {
+            let to_block = (from_block + BACKFILL_APPLY_CHUNK_SIZE as i64 - 1).min(gap.to_block);
+            let blocks = self
                 .backfill
-                .fetch_block(self.chain_id, block_number)
+                .fetch_blocks(self.chain_id, from_block, to_block)
                 .await?;
-            blocks.push(block);
-
-            if blocks.len() == BACKFILL_APPLY_CHUNK_SIZE {
-                self.apply_backfill_blocks(std::mem::take(&mut blocks))
-                    .await?;
-            }
-        }
-
-        if !blocks.is_empty() {
             self.apply_backfill_blocks(blocks).await?;
+            from_block = to_block + 1;
         }
 
         Ok(())
