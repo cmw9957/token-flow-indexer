@@ -36,6 +36,7 @@ async fn main() -> Result<()> {
         backfill,
         config.chain_id,
         config.chain_name,
+        config.backfill_chunk_size,
     ));
     processor.initialize().await?;
 

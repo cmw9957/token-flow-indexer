@@ -2,6 +2,7 @@ use std::{env, time::Duration};
 
 const DEFAULT_CHAIN_NAME: &str = "ethereum";
 const DEFAULT_RECONNECT_DELAY_SECS: u64 = 3;
+const DEFAULT_BACKFILL_CHUNK_SIZE: usize = 50;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -11,6 +12,7 @@ pub struct Config {
     pub chain_id: i32,
     pub chain_name: String,
     pub reconnect_delay: Duration,
+    pub backfill_chunk_size: usize,
 }
 
 impl Config {
@@ -24,6 +26,15 @@ impl Config {
         let chain_name = env::var("CHAIN_NAME").unwrap_or_else(|_| DEFAULT_CHAIN_NAME.into());
         let reconnect_delay_secs =
             parse_optional_env("EXEX_RECONNECT_DELAY_SECS", DEFAULT_RECONNECT_DELAY_SECS)?;
+        let backfill_chunk_size =
+            parse_optional_env("BACKFILL_CHUNK_SIZE", DEFAULT_BACKFILL_CHUNK_SIZE)?;
+        if backfill_chunk_size == 0 {
+            return Err(ConfigError::InvalidEnv {
+                name: "BACKFILL_CHUNK_SIZE",
+                value: backfill_chunk_size.to_string(),
+                message: "must be greater than 0".to_owned(),
+            });
+        }
 
         Ok(Self {
             database_url,
@@ -32,6 +43,7 @@ impl Config {
             chain_id,
             chain_name,
             reconnect_delay: Duration::from_secs(reconnect_delay_secs),
+            backfill_chunk_size,
         })
     }
 }

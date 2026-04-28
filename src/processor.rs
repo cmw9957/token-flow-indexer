@@ -7,14 +7,13 @@ use crate::{
     proto::{Block, BlockRef, ExExNotification, ExExNotificationKind},
 };
 
-const BACKFILL_APPLY_CHUNK_SIZE: usize = 25;
-
 #[derive(Debug, Clone)]
 pub struct Processor<S, B> {
     store: S,
     backfill: B,
     chain_id: i32,
     chain_name: String,
+    backfill_chunk_size: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,12 +35,19 @@ where
     /// - `backfill`: gap backfill source
     /// - `chain_id`: chain_id 값 (e.g. Ethereum : 1)
     /// - `chain_name`: chain_name 값 (e.g. Mainnet)
-    pub fn new(store: S, backfill: B, chain_id: i32, chain_name: impl Into<String>) -> Self {
+    pub fn new(
+        store: S,
+        backfill: B,
+        chain_id: i32,
+        chain_name: impl Into<String>,
+        backfill_chunk_size: usize,
+    ) -> Self {
         Self {
             store,
             backfill,
             chain_id,
             chain_name: chain_name.into(),
+            backfill_chunk_size,
         }
     }
 
@@ -197,7 +203,7 @@ where
 
         let mut from_block = gap.from_block;
         while from_block <= gap.to_block {
-            let to_block = (from_block + BACKFILL_APPLY_CHUNK_SIZE as i64 - 1).min(gap.to_block);
+            let to_block = (from_block + self.backfill_chunk_size as i64 - 1).min(gap.to_block);
             let blocks = self
                 .backfill
                 .fetch_blocks(self.chain_id, from_block, to_block)
@@ -230,10 +236,7 @@ where
         self.ensure_contiguous(&blocks).await?;
         ensure_block_sequence(&blocks)?;
 
-        let indexed_blocks = blocks
-            .into_iter()
-            .map(|block| Extractor::extract_block(raw_block(block)?))
-            .collect::<Result<Vec<_>>>()?;
+        let indexed_blocks = extract_blocks_parallel(blocks).await?;
         let Some(last_block) = indexed_blocks.last() else {
             return Ok(());
         };
@@ -429,6 +432,27 @@ fn tip_checkpoint(chain_id: i32, tip_block: BlockRef) -> Result<SyncCheckpoint> 
         last_indexed_hash: Some(format_hash(&tip_block.hash)?),
         status: SyncStatus::Syncing,
     })
+}
+
+/// Purpose: 여러 block의 extract 작업을 병렬 실행
+/// Param:
+/// - `blocks`: extract 대상 block 목록
+async fn extract_blocks_parallel(blocks: Vec<Block>) -> Result<Vec<IndexedBlock>> {
+    let mut tasks = tokio::task::JoinSet::new();
+
+    for block in blocks {
+        tasks.spawn_blocking(move || Extractor::extract_block(raw_block(block)?));
+    }
+
+    let mut indexed_blocks = Vec::new();
+    while let Some(result) = tasks.join_next().await {
+        let indexed_block = result
+            .map_err(|error| AppError::with_source("backfill extract task failed", error))??;
+        indexed_blocks.push(indexed_block);
+    }
+
+    indexed_blocks.sort_by_key(|block| block.record.block_number);
+    Ok(indexed_blocks)
 }
 
 /// Purpose: 같은 batch 안의 block 번호와 parent hash 연속성 검증
@@ -711,7 +735,7 @@ mod tests {
     async fn initialize_ensures_chain_and_sets_idle_status() {
         // 초기화 상태 갱신 검증
         let store = MockStore::default();
-        let processor = Processor::new(store.clone(), MockBackfill::default(), 1, "ethereum");
+        let processor = Processor::new(store.clone(), MockBackfill::default(), 1, "ethereum", 50);
 
         processor.initialize().await.unwrap();
 
@@ -730,7 +754,7 @@ mod tests {
             last_indexed_hash: Some(hex_bytes(0x22, 32)),
             status: SyncStatus::Idle,
         });
-        let processor = Processor::new(store.clone(), MockBackfill::default(), 1, "ethereum");
+        let processor = Processor::new(store.clone(), MockBackfill::default(), 1, "ethereum", 50);
 
         processor
             .process_remote_notification(committed_notification(10, 0x22, 0x11))
@@ -767,7 +791,7 @@ mod tests {
             .lock()
             .unwrap()
             .push(proto_block(10, 0x22, 0x10));
-        let processor = Processor::new(store.clone(), backfill, 1, "ethereum");
+        let processor = Processor::new(store.clone(), backfill, 1, "ethereum", 50);
 
         processor
             .process_remote_notification(committed_notification(11, 0x10, 0x11))
@@ -785,7 +809,7 @@ mod tests {
     async fn reverted_notification_deletes_old_range_and_moves_checkpoint_to_fork() {
         // reverted checkpoint 이동 검증
         let store = MockStore::default();
-        let processor = Processor::new(store.clone(), MockBackfill::default(), 1, "ethereum");
+        let processor = Processor::new(store.clone(), MockBackfill::default(), 1, "ethereum", 50);
 
         processor
             .process_remote_notification(ExExNotification {

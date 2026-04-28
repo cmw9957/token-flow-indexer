@@ -86,6 +86,7 @@ export CHAIN_NAME=ethereum
 export EXEX_INDEXER_GRPC_ENDPOINT='<REMOTE_INDEXER_ENDPOINT>'
 export BACKFILL_RPC_URL='<RPC_ENDPOINT>'
 export EXEX_RECONNECT_DELAY_SECS=3
+export BACKFILL_CHUNK_SIZE=50
 ```
 
 필수 값:
@@ -99,6 +100,7 @@ export EXEX_RECONNECT_DELAY_SECS=3
 
 - `CHAIN_NAME`: 체인 이름입니다. 기본값은 `ethereum`입니다.
 - `EXEX_RECONNECT_DELAY_SECS`: gRPC 연결 실패 후 재시도 대기 시간입니다. 기본값은 `3`초입니다.
+- `BACKFILL_CHUNK_SIZE`: gap backfill 때 한 번에 조회/저장할 블록 수입니다. 기본값은 `50`입니다.
 
 ## 인덱서 실행
 
