@@ -7,6 +7,29 @@
 - 루트 바이너리: `cargo run`으로 실행하는 인덱서입니다.
 - `migrations/0001_init.sql`: PostgreSQL 테이블과 인덱스 생성 SQL입니다.
 
+## 파일 트리
+
+```text
+token-flow-indexer/
+├── Cargo.toml
+├── README.md
+├── migrations/
+│   └── 0001_init.sql        # PostgreSQL schema, indexes
+└── src/
+    ├── main.rs              # 설정 로드, DB/RPC/client 조립, 구독 시작
+    ├── config.rs            # 환경변수 파싱
+    ├── remote.rs            # 원격 ExEx gRPC subscription/reconnect
+    ├── processor.rs         # notification 처리, gap/reorg/revert orchestration
+    ├── backfill.rs          # JSON-RPC 기반 gap backfill
+    ├── extractor.rs         # native/ERC20/ERC721/ERC1155 movement 추출
+    ├── models.rs            # DB 저장 모델과 enum
+    ├── proto.rs             # protobuf/gRPC 타입
+    ├── error.rs             # 공통 AppError/Result
+    └── db/
+        ├── mod.rs           # Store trait
+        └── postgres.rs      # PostgreSQL Store 구현
+```
+
 ## 요구 사항
 
 - Rust 1.85 이상
