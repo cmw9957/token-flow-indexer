@@ -203,11 +203,75 @@ impl RpcBackfillClient {
             .collect()
     }
 
+    /// Purpose: eth_getBlockReceipts로 여러 블록의 receipt 전체를 JSON-RPC batch 조회
+    /// Param:
+    /// - `self`: RpcBackfillClient
+    /// - `blocks`: receipt 조회 대상 block 목록
+    async fn fetch_block_receipts_batch(
+        &self,
+        blocks: &[RpcBlock],
+    ) -> Result<Vec<Vec<RpcReceipt>>> {
+        if blocks.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let requests = blocks
+            .iter()
+            .enumerate()
+            .map(|(index, block)| JsonRpcRequest {
+                jsonrpc: "2.0",
+                id: index as u64,
+                method: "eth_getBlockReceipts",
+                params: json!([block.number]),
+            })
+            .collect::<Vec<_>>();
+        let responses = self.send_batch(requests, "block receipts batch").await?;
+
+        responses
+            .into_iter()
+            .enumerate()
+            .map(|(index, response)| {
+                let result = response.result.ok_or_else(|| {
+                    AppError::msg(format!(
+                        "block receipts response missing result for block {}",
+                        blocks[index].number
+                    ))
+                })?;
+
+                let receipts =
+                    serde_json::from_value::<Vec<RpcReceipt>>(result).map_err(|error| {
+                        AppError::with_source("failed to decode block receipts", error)
+                    })?;
+                if receipts.len() != blocks[index].transactions.len() {
+                    return Err(AppError::msg(format!(
+                        "block receipts length {} does not match transaction count {} for block {}",
+                        receipts.len(),
+                        blocks[index].transactions.len(),
+                        blocks[index].number
+                    )));
+                }
+
+                Ok(receipts)
+            })
+            .collect()
+    }
+
     /// Purpose: 여러 블록의 transaction receipt를 JSON-RPC batch로 조회
     /// Param:
     /// - `self`: RpcBackfillClient
     /// - `blocks`: receipt 조회 대상 block 목록
     async fn fetch_receipts_for_blocks(&self, blocks: &[RpcBlock]) -> Result<Vec<Vec<RpcReceipt>>> {
+        match self.fetch_block_receipts_batch(blocks).await {
+            Ok(receipts) => {
+                return Ok(receipts);
+            }
+            Err(error) => {
+                eprintln!(
+                    "eth_getBlockReceipts failed; falling back to transaction receipt batch: {error}"
+                );
+            }
+        }
+
         let request_count = blocks
             .iter()
             .map(|block| block.transactions.len())
