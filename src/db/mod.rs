@@ -11,6 +11,12 @@ pub struct BlockRange {
     pub to_block: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredBlock {
+    pub record: BlockRecord,
+    pub movements: Vec<AssetMovement>,
+}
+
 impl BlockRange {
     /// 기능: 유효한 블록 범위 생성.
     /// 파라미터:
@@ -68,6 +74,17 @@ pub trait Store {
         &self,
         block: BlockRecord,
         movements: Vec<AssetMovement>,
+        checkpoint: SyncCheckpoint,
+    ) -> Result<()>;
+
+    /// 기능: 여러 블록과 자산 이동을 원자적으로 저장.
+    /// 파라미터:
+    /// - `self`: 현재 Store.
+    /// - `blocks`: 저장할 block과 movement 묶음.
+    /// - `checkpoint`: 저장 후 갱신할 checkpoint.
+    async fn apply_blocks(
+        &self,
+        blocks: Vec<StoredBlock>,
         checkpoint: SyncCheckpoint,
     ) -> Result<()>;
 

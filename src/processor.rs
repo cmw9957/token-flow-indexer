@@ -1,11 +1,13 @@
 use crate::{
     backfill::BackfillSource,
-    db::{BlockRange, Store},
+    db::{BlockRange, Store, StoredBlock},
     error::{AppError, Result},
     extractor::{Extractor, RawBlock, RawLog, RawTransaction},
     models::{AssetMovement, BlockRecord, SyncCheckpoint, SyncStatus},
     proto::{Block, BlockRef, ExExNotification, ExExNotificationKind},
 };
+
+const BACKFILL_APPLY_CHUNK_SIZE: usize = 25;
 
 #[derive(Debug, Clone)]
 pub struct Processor<S, B> {
@@ -193,50 +195,99 @@ where
             gap.last_indexed_block, gap.first_new_block, gap.from_block, gap.to_block
         );
 
+        let mut blocks = Vec::with_capacity(BACKFILL_APPLY_CHUNK_SIZE);
         for block_number in gap.from_block..=gap.to_block {
             let block = self
                 .backfill
                 .fetch_block(self.chain_id, block_number)
                 .await?;
-            self.apply_backfill_block(block).await?;
+            blocks.push(block);
+
+            if blocks.len() == BACKFILL_APPLY_CHUNK_SIZE {
+                self.apply_backfill_blocks(std::mem::take(&mut blocks))
+                    .await?;
+            }
+        }
+
+        if !blocks.is_empty() {
+            self.apply_backfill_blocks(blocks).await?;
         }
 
         Ok(())
     }
 
-    /// Purpose: backfill 블록 저장
+    /// Purpose: backfill 블록들을 한 트랜잭션으로 저장
     /// Param:
     /// - `self`: Processor
-    /// - `block`: backfill로 조회한 block
-    async fn apply_backfill_block(&self, block: Block) -> Result<()> {
-        if block.chain_id != self.chain_id as u64 {
-            return Err(AppError::msg(format!(
-                "backfill block chain_id {} does not match configured chain_id {}",
-                block.chain_id, self.chain_id
-            )));
+    /// - `blocks`: backfill로 조회한 연속 block 목록
+    async fn apply_backfill_blocks(&self, blocks: Vec<Block>) -> Result<()> {
+        if blocks.is_empty() {
+            return Ok(());
         }
 
-        self.ensure_contiguous(std::slice::from_ref(&block)).await?;
+        for block in &blocks {
+            if block.chain_id != self.chain_id as u64 {
+                return Err(AppError::msg(format!(
+                    "backfill block chain_id {} does not match configured chain_id {}",
+                    block.chain_id, self.chain_id
+                )));
+            }
+        }
 
-        let indexed_block = Extractor::extract_block(raw_block(block)?)?;
+        self.ensure_contiguous(&blocks).await?;
+        ensure_block_sequence(&blocks)?;
+
+        let indexed_blocks = blocks
+            .into_iter()
+            .map(|block| Extractor::extract_block(raw_block(block)?))
+            .collect::<Result<Vec<_>>>()?;
+        let Some(last_block) = indexed_blocks.last() else {
+            return Ok(());
+        };
+
         let checkpoint = SyncCheckpoint {
             chain_id: self.chain_id,
-            last_indexed_block: Some(indexed_block.record.block_number),
-            last_indexed_hash: Some(indexed_block.record.block_hash.clone()),
+            last_indexed_block: Some(last_block.record.block_number),
+            last_indexed_hash: Some(last_block.record.block_hash.clone()),
             status: SyncStatus::Syncing,
         };
-        let chain_id = indexed_block.record.chain_id;
-        let block_number = indexed_block.record.block_number;
-        let tx_count = indexed_block.record.tx_count;
-        let movement_count = indexed_block.record.movement_count;
 
-        self.store
-            .apply_block(indexed_block.record, indexed_block.movements, checkpoint)
-            .await?;
+        let stored_blocks = indexed_blocks
+            .into_iter()
+            .map(|indexed_block| StoredBlock {
+                record: indexed_block.record,
+                movements: indexed_block.movements,
+            })
+            .collect::<Vec<_>>();
+
+        let first_block_number = stored_blocks
+            .first()
+            .map(|block| block.record.block_number)
+            .unwrap_or_default();
+        let last_block_number = stored_blocks
+            .last()
+            .map(|block| block.record.block_number)
+            .unwrap_or_default();
+        let block_count = stored_blocks.len();
+        let movement_count = stored_blocks
+            .iter()
+            .map(|block| block.record.movement_count)
+            .sum::<i32>();
+        let tx_count = stored_blocks
+            .iter()
+            .map(|block| block.record.tx_count)
+            .sum::<i32>();
+
+        self.store.apply_blocks(stored_blocks, checkpoint).await?;
 
         println!(
-            "block indexed: chain_id={} block={} txs={} movements={}",
-            chain_id, block_number, tx_count, movement_count
+            "backfill blocks indexed: chain_id={} range={}..{} blocks={} txs={} movements={}",
+            self.chain_id,
+            first_block_number,
+            last_block_number,
+            block_count,
+            tx_count,
+            movement_count
         );
 
         Ok(())
@@ -385,6 +436,32 @@ fn tip_checkpoint(chain_id: i32, tip_block: BlockRef) -> Result<SyncCheckpoint> 
         last_indexed_hash: Some(format_hash(&tip_block.hash)?),
         status: SyncStatus::Syncing,
     })
+}
+
+/// Purpose: 같은 batch 안의 block 번호와 parent hash 연속성 검증
+/// Param:
+/// - `blocks`: 순서 검증 대상 block 목록
+fn ensure_block_sequence(blocks: &[Block]) -> Result<()> {
+    for pair in blocks.windows(2) {
+        let previous = &pair[0];
+        let current = &pair[1];
+
+        if current.number != previous.number + 1 {
+            return Err(AppError::msg(format!(
+                "non-contiguous backfill batch: block {} followed by {}",
+                previous.number, current.number
+            )));
+        }
+
+        if current.parent_hash != previous.hash {
+            return Err(AppError::msg(format!(
+                "backfill batch parent hash mismatch at block {}",
+                current.number
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 /// Purpose: proto 블록을 extractor 입력 모델로 변환
@@ -595,6 +672,19 @@ mod tests {
         ) -> Result<()> {
             let mut state = self.state.lock().unwrap();
             state.applied_blocks.push(block);
+            state.checkpoint = Some(checkpoint);
+            Ok(())
+        }
+
+        async fn apply_blocks(
+            &self,
+            blocks: Vec<StoredBlock>,
+            checkpoint: SyncCheckpoint,
+        ) -> Result<()> {
+            let mut state = self.state.lock().unwrap();
+            state
+                .applied_blocks
+                .extend(blocks.into_iter().map(|block| block.record));
             state.checkpoint = Some(checkpoint);
             Ok(())
         }

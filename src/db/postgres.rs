@@ -1,10 +1,12 @@
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Postgres, QueryBuilder, Row};
 
 use crate::{
-    db::{BlockRange, Store},
+    db::{BlockRange, Store, StoredBlock},
     error::{AppError, Result},
     models::{AssetMovement, BlockRecord, SyncCheckpoint, SyncStatus},
 };
+
+const MAX_MOVEMENT_ROWS_PER_INSERT: usize = 4_000;
 
 #[derive(Debug, Clone)]
 pub struct PostgresStore {
@@ -138,108 +140,35 @@ impl Store for PostgresStore {
         movements: Vec<AssetMovement>,
         checkpoint: SyncCheckpoint,
     ) -> Result<()> {
+        self.apply_blocks(
+            vec![StoredBlock {
+                record: block,
+                movements,
+            }],
+            checkpoint,
+        )
+        .await
+    }
+
+    /// 기능: 기존 동일 블록 삭제 후 여러 블록, 자산 이동, 체크포인트 저장.
+    /// 파라미터:
+    /// - `self`: 현재 PostgresStore.
+    /// - `blocks`: 저장할 block과 movement 묶음.
+    /// - `checkpoint`: 저장 후 갱신할 checkpoint.
+    async fn apply_blocks(
+        &self,
+        blocks: Vec<StoredBlock>,
+        checkpoint: SyncCheckpoint,
+    ) -> Result<()> {
         let mut tx = self.pool.begin().await.map_err(|error| {
             AppError::with_source("failed to begin apply block transaction", error)
         })?;
 
-        sqlx::query(
-            r#"
-            delete from blocks
-            where chain_id = $1 and block_number = $2
-            "#,
-        )
-        .bind(block.chain_id)
-        .bind(block.block_number)
-        .execute(&mut *tx)
-        .await
-        .map_err(|error| AppError::with_source("failed to delete existing block", error))?;
-
-        sqlx::query(
-            r#"
-            insert into blocks (
-                chain_id,
-                block_number,
-                block_hash,
-                parent_hash,
-                block_timestamp,
-                tx_count,
-                movement_count,
-                indexed_at
-            )
-            values ($1, $2, $3, $4, to_timestamp($5::double precision), $6, $7, now())
-            "#,
-        )
-        .bind(block.chain_id)
-        .bind(block.block_number)
-        .bind(&block.block_hash)
-        .bind(&block.parent_hash)
-        .bind(&block.block_timestamp)
-        .bind(block.tx_count)
-        .bind(block.movement_count)
-        .execute(&mut *tx)
-        .await
-        .map_err(|error| AppError::with_source("failed to insert block", error))?;
-
-        for movement in movements {
-            sqlx::query(
-                r#"
-                insert into asset_movements (
-                    chain_id,
-                    block_number,
-                    block_hash,
-                    block_timestamp,
-                    tx_hash,
-                    tx_index,
-                    source_type,
-                    asset_type,
-                    token_address,
-                    from_address,
-                    to_address,
-                    token_id,
-                    amount_raw,
-                    log_index,
-                    log_sub_index,
-                    created_at
-                )
-                values (
-                    $1,
-                    $2,
-                    $3,
-                    to_timestamp($4::double precision),
-                    $5,
-                    $6,
-                    $7,
-                    $8,
-                    $9,
-                    $10,
-                    $11,
-                    $12::numeric,
-                    $13::numeric,
-                    $14,
-                    $15,
-                    now()
-                )
-                on conflict do nothing
-                "#,
-            )
-            .bind(movement.chain_id)
-            .bind(movement.block_number)
-            .bind(&movement.block_hash)
-            .bind(&movement.block_timestamp)
-            .bind(&movement.tx_hash)
-            .bind(movement.tx_index)
-            .bind(movement.source_type.as_str())
-            .bind(movement.asset_type.as_str())
-            .bind(&movement.token_address)
-            .bind(&movement.from_address)
-            .bind(&movement.to_address)
-            .bind(&movement.token_id)
-            .bind(&movement.amount_raw)
-            .bind(movement.log_index)
-            .bind(movement.log_sub_index)
-            .execute(&mut *tx)
-            .await
-            .map_err(|error| AppError::with_source("failed to insert asset movement", error))?;
+        if !blocks.is_empty() {
+            validate_apply_blocks(&blocks, checkpoint.chain_id)?;
+            delete_existing_blocks(&mut tx, checkpoint.chain_id, &blocks).await?;
+            insert_blocks(&mut tx, &blocks).await?;
+            insert_asset_movements(&mut tx, &blocks).await?;
         }
 
         upsert_checkpoint(&mut tx, &checkpoint).await?;
@@ -291,6 +220,176 @@ impl Store for PostgresStore {
 
         Ok(())
     }
+}
+
+/// 기능: apply_blocks 입력의 chain_id 일관성 검증.
+/// 파라미터:
+/// - `blocks`: 저장 대상 blocks.
+/// - `chain_id`: checkpoint chain_id.
+fn validate_apply_blocks(blocks: &[StoredBlock], chain_id: i32) -> Result<()> {
+    for block in blocks {
+        if block.record.chain_id != chain_id {
+            return Err(AppError::msg(format!(
+                "block chain_id {} does not match checkpoint chain_id {}",
+                block.record.chain_id, chain_id
+            )));
+        }
+
+        for movement in &block.movements {
+            if movement.chain_id != chain_id {
+                return Err(AppError::msg(format!(
+                    "movement chain_id {} does not match checkpoint chain_id {}",
+                    movement.chain_id, chain_id
+                )));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// 기능: 기존 동일 블록 삭제.
+/// 파라미터:
+/// - `tx`: 실행 중인 transaction.
+/// - `chain_id`: chain_id 값.
+/// - `blocks`: 삭제 대상 block 목록.
+async fn delete_existing_blocks(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    chain_id: i32,
+    blocks: &[StoredBlock],
+) -> Result<()> {
+    let block_numbers = blocks
+        .iter()
+        .map(|block| block.record.block_number)
+        .collect::<Vec<_>>();
+
+    sqlx::query(
+        r#"
+        delete from blocks
+        where chain_id = $1 and block_number = any($2)
+        "#,
+    )
+    .bind(chain_id)
+    .bind(&block_numbers)
+    .execute(&mut **tx)
+    .await
+    .map_err(|error| AppError::with_source("failed to delete existing blocks", error))?;
+
+    Ok(())
+}
+
+/// 기능: 여러 블록을 bulk insert.
+/// 파라미터:
+/// - `tx`: 실행 중인 transaction.
+/// - `blocks`: 저장 대상 block 목록.
+async fn insert_blocks(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    blocks: &[StoredBlock],
+) -> Result<()> {
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        insert into blocks (
+            chain_id,
+            block_number,
+            block_hash,
+            parent_hash,
+            block_timestamp,
+            tx_count,
+            movement_count,
+            indexed_at
+        )
+        "#,
+    );
+
+    builder.push_values(blocks, |mut row, block| {
+        row.push_bind(block.record.chain_id)
+            .push_bind(block.record.block_number)
+            .push_bind(&block.record.block_hash)
+            .push_bind(&block.record.parent_hash)
+            .push("to_timestamp(")
+            .push_bind(&block.record.block_timestamp)
+            .push("::double precision)")
+            .push_bind(block.record.tx_count)
+            .push_bind(block.record.movement_count)
+            .push("now()");
+    });
+
+    builder
+        .build()
+        .execute(&mut **tx)
+        .await
+        .map_err(|error| AppError::with_source("failed to insert blocks", error))?;
+
+    Ok(())
+}
+
+/// 기능: 여러 블록의 asset_movements를 bulk insert.
+/// 파라미터:
+/// - `tx`: 실행 중인 transaction.
+/// - `blocks`: 저장 대상 block 목록.
+async fn insert_asset_movements(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    blocks: &[StoredBlock],
+) -> Result<()> {
+    let movements = blocks
+        .iter()
+        .flat_map(|block| block.movements.iter())
+        .collect::<Vec<_>>();
+
+    for chunk in movements.chunks(MAX_MOVEMENT_ROWS_PER_INSERT) {
+        let mut builder = QueryBuilder::<Postgres>::new(
+            r#"
+            insert into asset_movements (
+                chain_id,
+                block_number,
+                block_hash,
+                block_timestamp,
+                tx_hash,
+                tx_index,
+                source_type,
+                asset_type,
+                token_address,
+                from_address,
+                to_address,
+                token_id,
+                amount_raw,
+                log_index,
+                log_sub_index,
+                created_at
+            )
+            "#,
+        );
+
+        builder.push_values(chunk, |mut row, movement| {
+            row.push_bind(movement.chain_id)
+                .push_bind(movement.block_number)
+                .push_bind(&movement.block_hash)
+                .push("to_timestamp(")
+                .push_bind(&movement.block_timestamp)
+                .push("::double precision)")
+                .push_bind(&movement.tx_hash)
+                .push_bind(movement.tx_index)
+                .push_bind(movement.source_type.as_str())
+                .push_bind(movement.asset_type.as_str())
+                .push_bind(&movement.token_address)
+                .push_bind(&movement.from_address)
+                .push_bind(&movement.to_address)
+                .push_bind(&movement.token_id)
+                .push_bind(&movement.amount_raw)
+                .push_bind(movement.log_index)
+                .push_bind(movement.log_sub_index)
+                .push("now()");
+        });
+
+        builder.push(" on conflict do nothing");
+        builder
+            .build()
+            .execute(&mut **tx)
+            .await
+            .map_err(|error| AppError::with_source("failed to insert asset movements", error))?;
+    }
+
+    Ok(())
 }
 
 /// 기능: 체크포인트 insert 또는 update.
