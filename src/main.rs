@@ -8,8 +8,8 @@ mod hex;
 mod models;
 mod processor;
 mod proto;
-mod proto_convert;
 mod remote;
+mod remote_convert;
 
 use std::sync::Arc;
 

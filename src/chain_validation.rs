@@ -1,7 +1,7 @@
 use crate::{
     error::{AppError, Result},
     proto::Block,
-    proto_convert::format_hash,
+    remote_convert::format_remote_hash,
 };
 
 /// Purpose: 체크포인트와 첫 새 블록의 연속성 확인
@@ -17,7 +17,7 @@ pub fn ensure_checkpoint_continuity(
     let expected_next = last_indexed_block + 1;
     let first_number = i64::try_from(first_block.number)
         .map_err(|error| AppError::with_source("block number does not fit in i64", error))?;
-    let parent_hash = format_hash(&first_block.parent_hash)?;
+    let parent_hash = format_remote_hash(&first_block.parent_hash)?;
 
     if first_number != expected_next {
         return Err(AppError::msg(format!(

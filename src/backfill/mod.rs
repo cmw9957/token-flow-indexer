@@ -48,7 +48,7 @@ impl BackfillSource for RpcBackfillClient {
         to_block: i64,
     ) -> Result<Vec<Block>> {
         let blocks = self.fetch_rpc_blocks(from_block, to_block).await?;
-        let receipts_by_block = self.fetch_receipts_for_blocks(&blocks).await?;
+        let receipts_by_block = self.fetch_receipts_grouped_by_block(&blocks).await?;
 
         blocks
             .into_iter()

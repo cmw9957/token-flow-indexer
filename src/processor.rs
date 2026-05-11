@@ -6,7 +6,7 @@ use crate::{
     extractor::Extractor,
     models::{IndexedBlock, SyncCheckpoint, SyncStatus},
     proto::{Block, BlockRef, ExExNotification, ExExNotificationKind},
-    proto_convert::{block_ref_hash, format_hash, raw_block},
+    remote_convert::{format_remote_block_ref_hash, format_remote_hash, remote_block_to_raw_block},
 };
 
 #[derive(Debug, Clone)]
@@ -147,7 +147,7 @@ where
     ) -> Result<()> {
         let tip_block = required_block_ref(tip_block, "tip_block")?;
         self.backfill_gap_if_needed(&new_blocks).await?;
-        self.ensure_contiguous(&new_blocks).await?;
+        self.ensure_contiguous_with_checkpoint(&new_blocks).await?;
 
         for block in new_blocks {
             if block.chain_id != self.chain_id as u64 {
@@ -157,7 +157,7 @@ where
                 )));
             }
 
-            let indexed_block = Extractor::extract_block(raw_block(block)?)?;
+            let indexed_block = Extractor::extract_block(remote_block_to_raw_block(block)?)?;
             let is_tip = indexed_block.record.block_number == tip_block.number as i64;
             let checkpoint = SyncCheckpoint {
                 chain_id: self.chain_id,
@@ -185,7 +185,7 @@ where
         }
 
         self.store
-            .save_checkpoint(tip_checkpoint(self.chain_id, tip_block)?)
+            .save_checkpoint(checkpoint_from_tip(self.chain_id, tip_block)?)
             .await
     }
 
@@ -235,10 +235,10 @@ where
             }
         }
 
-        self.ensure_contiguous(&blocks).await?;
+        self.ensure_contiguous_with_checkpoint(&blocks).await?;
         ensure_block_sequence(&blocks)?;
 
-        let indexed_blocks = extract_blocks_parallel(blocks).await?;
+        let indexed_blocks = extract_blocks_concurrently(blocks).await?;
         let Some(last_block) = indexed_blocks.last() else {
             return Ok(());
         };
@@ -328,7 +328,7 @@ where
     /// Param:
     /// - `self`: Processor
     /// - `new_blocks`: 연속성 검증 대상 new_blocks
-    async fn ensure_contiguous(&self, new_blocks: &[Block]) -> Result<()> {
+    async fn ensure_contiguous_with_checkpoint(&self, new_blocks: &[Block]) -> Result<()> {
         let Some(first_block) = new_blocks.first() else {
             return Ok(());
         };
@@ -396,7 +396,7 @@ where
                 SyncCheckpoint {
                     chain_id: self.chain_id,
                     last_indexed_block: Some(fork_block.number as i64),
-                    last_indexed_hash: Some(block_ref_hash(&fork_block)?),
+                    last_indexed_hash: Some(format_remote_block_ref_hash(&fork_block)?),
                     status: SyncStatus::Syncing,
                 },
             )
@@ -408,11 +408,11 @@ where
 /// Param:
 /// - `chain_id`: chain_id 값
 /// - `tip_block`: checkpoint 기준 tip_block
-fn tip_checkpoint(chain_id: i32, tip_block: BlockRef) -> Result<SyncCheckpoint> {
+fn checkpoint_from_tip(chain_id: i32, tip_block: BlockRef) -> Result<SyncCheckpoint> {
     Ok(SyncCheckpoint {
         chain_id,
         last_indexed_block: Some(tip_block.number as i64),
-        last_indexed_hash: Some(format_hash(&tip_block.hash)?),
+        last_indexed_hash: Some(format_remote_hash(&tip_block.hash)?),
         status: SyncStatus::Syncing,
     })
 }
@@ -420,11 +420,11 @@ fn tip_checkpoint(chain_id: i32, tip_block: BlockRef) -> Result<SyncCheckpoint> 
 /// Purpose: 여러 block의 extract 작업을 병렬 실행
 /// Param:
 /// - `blocks`: extract 대상 block 목록
-async fn extract_blocks_parallel(blocks: Vec<Block>) -> Result<Vec<IndexedBlock>> {
+async fn extract_blocks_concurrently(blocks: Vec<Block>) -> Result<Vec<IndexedBlock>> {
     let mut tasks = tokio::task::JoinSet::new();
 
     for block in blocks {
-        tasks.spawn_blocking(move || Extractor::extract_block(raw_block(block)?));
+        tasks.spawn_blocking(move || Extractor::extract_block(remote_block_to_raw_block(block)?));
     }
 
     let mut indexed_blocks = Vec::new();

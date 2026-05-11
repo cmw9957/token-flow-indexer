@@ -9,7 +9,7 @@ use crate::{
     models::{AssetMovement, AssetType, BlockRecord, IndexedBlock, SourceType},
 };
 
-use abi::is_zero_hex_or_decimal;
+use abi::is_zero_uint;
 use erc::log_movements;
 use native::native_movement;
 use normalize::{normalize_address, normalize_hash};
@@ -52,7 +52,7 @@ impl Extractor {
         let mut movements = Vec::new();
 
         for transaction in &block.transactions {
-            if !is_zero_hex_or_decimal(&transaction.value_raw) {
+            if !is_zero_uint(&transaction.value_raw) {
                 movements.push(native_movement(&block, transaction)?);
             }
 
@@ -86,7 +86,7 @@ impl Extractor {
 /// - `token_id`: NFT 또는 ERC1155 token_id
 /// - `amount_raw`: raw amount_raw
 /// - `log_sub_index`: log 내부 log_sub_index
-fn base_log_movement(
+fn build_log_movement(
     block: &RawBlock,
     transaction: &RawTransaction,
     log: &RawLog,

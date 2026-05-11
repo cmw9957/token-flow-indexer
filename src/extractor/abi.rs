@@ -45,7 +45,7 @@ fn decode_uint_array_at(words: &[String], offset_words: usize) -> Result<Vec<Str
 /// Purpose: 로그 data를 32바이트 hex word 목록으로 분할
 /// Param:
 /// - `data`: 0x prefix log data
-pub(super) fn data_words(data: &str) -> Result<Vec<String>> {
+pub(super) fn split_data_words(data: &str) -> Result<Vec<String>> {
     let hex = strip_0x(data)?;
     if hex.is_empty() {
         return Ok(Vec::new());
@@ -164,7 +164,7 @@ fn decimal_add_small(decimal: &str, addend: u8) -> String {
 /// Purpose: hex 또는 decimal 문자열의 0 값 여부 확인
 /// Param:
 /// - `value`: 확인할 uint value
-pub(super) fn is_zero_hex_or_decimal(value: &str) -> bool {
+pub(super) fn is_zero_uint(value: &str) -> bool {
     normalize_uint(value).map_or(false, |value| value == "0")
 }
 

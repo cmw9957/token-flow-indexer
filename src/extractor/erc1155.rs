@@ -5,8 +5,8 @@ use crate::{
 
 use super::{
     RawBlock, RawLog, RawTransaction,
-    abi::{data_words, decode_two_uint_arrays, hex_word_to_decimal},
-    base_log_movement,
+    abi::{decode_two_uint_arrays, hex_word_to_decimal, split_data_words},
+    build_log_movement,
     normalize::topic_address,
 };
 
@@ -24,12 +24,12 @@ pub(super) fn erc1155_single_movement(
         return Ok(None);
     }
 
-    let words = data_words(&log.data)?;
+    let words = split_data_words(&log.data)?;
     if words.len() != 2 {
         return Ok(None);
     }
 
-    Ok(Some(base_log_movement(
+    Ok(Some(build_log_movement(
         block,
         transaction,
         log,
@@ -56,7 +56,7 @@ pub(super) fn erc1155_batch_movements(
         return Ok(Vec::new());
     }
 
-    let words = data_words(&log.data)?;
+    let words = split_data_words(&log.data)?;
     let (ids, values) = decode_two_uint_arrays(&words)?;
     if ids.len() != values.len() {
         return Ok(Vec::new());
@@ -64,7 +64,7 @@ pub(super) fn erc1155_batch_movements(
 
     let mut movements = Vec::with_capacity(ids.len());
     for (index, (token_id, amount)) in ids.into_iter().zip(values).enumerate() {
-        movements.push(base_log_movement(
+        movements.push(build_log_movement(
             block,
             transaction,
             log,

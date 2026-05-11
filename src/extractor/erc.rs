@@ -6,7 +6,7 @@ use crate::{
 use super::{
     RawBlock, RawLog, RawTransaction,
     abi::normalize_uint,
-    base_log_movement,
+    build_log_movement,
     erc1155::{erc1155_batch_movements, erc1155_single_movement},
     normalize::topic_address,
 };
@@ -53,7 +53,7 @@ fn erc_transfer_movement(
     log: &RawLog,
 ) -> Result<Option<AssetMovement>> {
     if log.topics.len() == 3 {
-        return Ok(Some(base_log_movement(
+        return Ok(Some(build_log_movement(
             block,
             transaction,
             log,
@@ -67,7 +67,7 @@ fn erc_transfer_movement(
     }
 
     if log.topics.len() == 4 {
-        return Ok(Some(base_log_movement(
+        return Ok(Some(build_log_movement(
             block,
             transaction,
             log,

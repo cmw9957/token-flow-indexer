@@ -61,11 +61,14 @@ impl RpcBackfillClient {
     /// Param:
     /// - `self`: RpcBackfillClient
     /// - `blocks`: receipt 조회 대상 block 목록
-    pub(super) async fn fetch_receipts_for_blocks(
+    pub(super) async fn fetch_receipts_grouped_by_block(
         &self,
         blocks: &[RpcBlock],
     ) -> Result<Vec<Vec<RpcReceipt>>> {
-        match self.fetch_block_receipts_batch(blocks).await {
+        match self
+            .fetch_receipts_with_eth_get_block_receipts(blocks)
+            .await
+        {
             Ok(receipts) => {
                 return Ok(receipts);
             }
@@ -152,7 +155,7 @@ impl RpcBackfillClient {
     /// Param:
     /// - `self`: RpcBackfillClient
     /// - `blocks`: receipt 조회 대상 block 목록
-    async fn fetch_block_receipts_batch(
+    async fn fetch_receipts_with_eth_get_block_receipts(
         &self,
         blocks: &[RpcBlock],
     ) -> Result<Vec<Vec<RpcReceipt>>> {
