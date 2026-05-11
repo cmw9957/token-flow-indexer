@@ -1,3 +1,6 @@
+// Remote ExEx와 gRPC/Protocol Buffers로 주고받는 wire message 타입 정의입니다.
+// 이 타입들은 네트워크 입력 모델이며, 인덱싱 전 `remote_convert`에서 내부 모델로 변환됩니다.
+
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SubscribeRequest {}
 
