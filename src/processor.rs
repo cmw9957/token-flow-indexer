@@ -2,9 +2,10 @@ use crate::{
     backfill::BackfillSource,
     db::{BlockRange, Store, StoredBlock},
     error::{AppError, Result},
-    extractor::{Extractor, RawBlock, RawLog, RawTransaction},
-    models::{AssetMovement, BlockRecord, SyncCheckpoint, SyncStatus},
+    extractor::Extractor,
+    models::{IndexedBlock, SyncCheckpoint, SyncStatus},
     proto::{Block, BlockRef, ExExNotification, ExExNotificationKind},
+    proto_convert::{block_ref_hash, format_hash, raw_block},
 };
 
 #[derive(Debug, Clone)]
@@ -413,7 +414,7 @@ where
                 SyncCheckpoint {
                     chain_id: self.chain_id,
                     last_indexed_block: Some(fork_block.number as i64),
-                    last_indexed_hash: Some(format_hash(&fork_block.hash)?),
+                    last_indexed_hash: Some(block_ref_hash(&fork_block)?),
                     status: SyncStatus::Syncing,
                 },
             )
@@ -481,124 +482,12 @@ fn ensure_block_sequence(blocks: &[Block]) -> Result<()> {
     Ok(())
 }
 
-/// Purpose: proto 블록을 extractor 입력 모델로 변환
-/// Param:
-/// - `block`: 변환할 proto block
-fn raw_block(block: Block) -> Result<RawBlock> {
-    Ok(RawBlock {
-        chain_id: i32::try_from(block.chain_id)
-            .map_err(|error| AppError::with_source("chain_id does not fit in i32", error))?,
-        block_number: i64::try_from(block.number)
-            .map_err(|error| AppError::with_source("block number does not fit in i64", error))?,
-        block_hash: format_hash(&block.hash)?,
-        parent_hash: format_hash(&block.parent_hash)?,
-        block_timestamp: block.timestamp.to_string(),
-        transactions: block
-            .transactions
-            .into_iter()
-            .map(|transaction| {
-                Ok(RawTransaction {
-                    tx_hash: format_hash(&transaction.hash)?,
-                    tx_index: i32::try_from(transaction.index).map_err(|error| {
-                        AppError::with_source("transaction index does not fit in i32", error)
-                    })?,
-                    from_address: format_address(&transaction.from)?,
-                    to_address: transaction.to.as_deref().map(format_address).transpose()?,
-                    value_raw: transaction.value_raw,
-                    logs: transaction
-                        .logs
-                        .into_iter()
-                        .map(|log| {
-                            Ok(RawLog {
-                                log_index: i32::try_from(log.index).map_err(|error| {
-                                    AppError::with_source("log index does not fit in i32", error)
-                                })?,
-                                contract_address: format_address(&log.contract_address)?,
-                                topics: log
-                                    .topics
-                                    .iter()
-                                    .map(|topic| format_hash(topic))
-                                    .collect::<Result<Vec<_>>>()?,
-                                data: format_bytes(&log.data),
-                            })
-                        })
-                        .collect::<Result<Vec<_>>>()?,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?,
-    })
-}
-
 /// Purpose: 필수 블록 참조 추출
 /// Param:
 /// - `block_ref`: 검사할 block_ref
 /// - `name`: error message용 field name
 fn required_block_ref(block_ref: Option<BlockRef>, name: &str) -> Result<BlockRef> {
     block_ref.ok_or_else(|| AppError::msg(format!("missing {name}")))
-}
-
-/// Purpose: 32바이트 해시를 0x hex 문자열로 변환
-/// Param:
-/// - `bytes`: 32-byte hash bytes
-fn format_hash(bytes: &[u8]) -> Result<String> {
-    if bytes.len() != 32 {
-        return Err(AppError::msg(format!(
-            "invalid block hash length: expected 32 bytes, got {}",
-            bytes.len()
-        )));
-    }
-
-    let mut out = String::with_capacity(66);
-    out.push_str("0x");
-    for byte in bytes {
-        out.push(hex_char(byte >> 4));
-        out.push(hex_char(byte & 0x0f));
-    }
-    Ok(out)
-}
-
-/// Purpose: 20바이트 주소를 0x hex 문자열로 변환
-/// Param:
-/// - `bytes`: 20-byte address bytes
-fn format_address(bytes: &[u8]) -> Result<String> {
-    if bytes.len() != 20 {
-        return Err(AppError::msg(format!(
-            "invalid address length: expected 20 bytes, got {}",
-            bytes.len()
-        )));
-    }
-
-    let mut out = String::with_capacity(42);
-    out.push_str("0x");
-    for byte in bytes {
-        out.push(hex_char(byte >> 4));
-        out.push(hex_char(byte & 0x0f));
-    }
-    Ok(out)
-}
-
-/// Purpose: 바이트 배열을 0x hex 문자열로 변환
-/// Param:
-/// - `bytes`: bytes 값
-fn format_bytes(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(2 + bytes.len() * 2);
-    out.push_str("0x");
-    for byte in bytes {
-        out.push(hex_char(byte >> 4));
-        out.push(hex_char(byte & 0x0f));
-    }
-    out
-}
-
-/// Purpose: 4비트 값을 hex 문자로 변환
-/// Param:
-/// - `value`: 0~15 value
-fn hex_char(value: u8) -> char {
-    match value {
-        0..=9 => (b'0' + value) as char,
-        10..=15 => (b'a' + value - 10) as char,
-        _ => unreachable!("nibble is always <= 15"),
-    }
 }
 
 impl ExExNotificationKind {
@@ -615,26 +504,11 @@ impl ExExNotificationKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IndexedBlock {
-    pub record: BlockRecord,
-    pub movements: Vec<AssetMovement>,
-}
-
-impl IndexedBlock {
-    /// Purpose: 블록 레코드와 자산 이동 목록으로 인덱싱 결과 생성
-    /// Param:
-    /// - `record`: block record
-    /// - `movements`: asset movements
-    pub fn new(mut record: BlockRecord, movements: Vec<AssetMovement>) -> Self {
-        record.movement_count = movements.len() as i32;
-        Self { record, movements }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
+
+    use crate::models::{AssetMovement, BlockRecord};
 
     use super::*;
 

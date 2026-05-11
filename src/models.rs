@@ -38,6 +38,23 @@ pub struct SyncCheckpoint {
     pub status: SyncStatus,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexedBlock {
+    pub record: BlockRecord,
+    pub movements: Vec<AssetMovement>,
+}
+
+impl IndexedBlock {
+    /// Purpose: 블록 레코드와 자산 이동 목록으로 인덱싱 결과 생성
+    /// Param:
+    /// - `record`: block record
+    /// - `movements`: asset movements
+    pub fn new(mut record: BlockRecord, movements: Vec<AssetMovement>) -> Self {
+        record.movement_count = movements.len() as i32;
+        Self { record, movements }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceType {
     TxValue,

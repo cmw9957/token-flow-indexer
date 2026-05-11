@@ -6,6 +6,7 @@ mod extractor;
 mod models;
 mod processor;
 mod proto;
+mod proto_convert;
 mod remote;
 
 use std::sync::Arc;
