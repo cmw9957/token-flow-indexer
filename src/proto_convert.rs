@@ -1,6 +1,7 @@
 use crate::{
     error::{AppError, Result},
     extractor::{RawBlock, RawLog, RawTransaction},
+    hex::encode_prefixed,
     proto::{Block, BlockRef},
 };
 
@@ -42,7 +43,7 @@ pub fn raw_block(block: Block) -> Result<RawBlock> {
                                     .iter()
                                     .map(|topic| format_hash(topic))
                                     .collect::<Result<Vec<_>>>()?,
-                                data: format_bytes(&log.data),
+                                data: encode_prefixed(&log.data),
                             })
                         })
                         .collect::<Result<Vec<_>>>()?,
@@ -70,7 +71,7 @@ pub fn format_hash(bytes: &[u8]) -> Result<String> {
         )));
     }
 
-    Ok(format_bytes(bytes))
+    Ok(encode_prefixed(bytes))
 }
 
 /// Purpose: 20바이트 주소를 0x hex 문자열로 변환
@@ -84,29 +85,5 @@ fn format_address(bytes: &[u8]) -> Result<String> {
         )));
     }
 
-    Ok(format_bytes(bytes))
-}
-
-/// Purpose: 바이트 배열을 0x hex 문자열로 변환
-/// Param:
-/// - `bytes`: bytes 값
-fn format_bytes(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(2 + bytes.len() * 2);
-    out.push_str("0x");
-    for byte in bytes {
-        out.push(hex_char(byte >> 4));
-        out.push(hex_char(byte & 0x0f));
-    }
-    out
-}
-
-/// Purpose: 4비트 값을 hex 문자로 변환
-/// Param:
-/// - `value`: 0~15 value
-fn hex_char(value: u8) -> char {
-    match value {
-        0..=9 => (b'0' + value) as char,
-        10..=15 => (b'a' + value - 10) as char,
-        _ => unreachable!("nibble is always <= 15"),
-    }
+    Ok(encode_prefixed(bytes))
 }

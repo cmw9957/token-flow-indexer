@@ -1,4 +1,7 @@
-use crate::error::{AppError, Result};
+use crate::{
+    error::{AppError, Result},
+    hex::strip_0x,
+};
 
 /// Purpose: indexed address topic에서 주소 추출
 /// Param:
@@ -56,24 +59,4 @@ fn normalize_hex(value: &str, expected_len: usize, name: &str) -> Result<String>
     }
 
     Ok(format!("0x{}", hex.to_ascii_lowercase()))
-}
-
-/// Purpose: 0x prefix 제거
-/// Param:
-/// - `value`: 0x prefix 필요 value
-pub(super) fn strip_0x(value: &str) -> Result<&str> {
-    value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-        .ok_or_else(|| AppError::msg(format!("hex value must start with 0x: {value:?}")))
-}
-
-/// Purpose: optional 0x prefix 제거
-/// Param:
-/// - `value`: 0x prefix가 있거나 없는 hex value
-pub(super) fn strip_optional_0x(value: &str) -> &str {
-    value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-        .unwrap_or(value)
 }

@@ -1,6 +1,6 @@
 use crate::{
     error::{AppError, Result},
-    extractor::hex::{strip_0x, strip_optional_0x},
+    hex::{strip_0x, strip_optional_0x},
 };
 
 /// Purpose: ABI encoded uint256 배열 두 개 디코딩

@@ -3,6 +3,7 @@ mod config;
 mod db;
 mod error;
 mod extractor;
+mod hex;
 mod models;
 mod processor;
 mod proto;
