@@ -1,4 +1,5 @@
 mod backfill;
+mod chain_validation;
 mod config;
 mod db;
 mod error;
