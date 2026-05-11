@@ -32,8 +32,6 @@ pub struct ExExNotification {
     pub kind: i32,
     #[prost(message, optional, tag = "2")]
     pub old_range: Option<BlockRange>,
-    #[prost(message, optional, tag = "3")]
-    pub new_range: Option<BlockRange>,
     #[prost(message, optional, tag = "4")]
     pub fork_block: Option<BlockRef>,
     #[prost(message, optional, tag = "5")]
@@ -190,10 +188,6 @@ mod tests {
         let notification = ExExNotification {
             kind: ExExNotificationKind::ChainCommitted as i32,
             old_range: None,
-            new_range: Some(BlockRange {
-                first: 10,
-                last: 10,
-            }),
             fork_block: None,
             tip_block: Some(BlockRef {
                 number: 10,

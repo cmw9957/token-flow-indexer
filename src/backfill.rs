@@ -27,12 +27,6 @@ impl RpcBackfillClient {
 }
 
 pub trait BackfillSource {
-    /// Purpose: 누락 블록 하나를 조회
-    /// Param:
-    /// - `chain_id`: chain_id 값
-    /// - `block_number`: 조회할 block_number
-    async fn fetch_block(&self, chain_id: i32, block_number: i64) -> Result<Block>;
-
     /// Purpose: 누락 블록 범위를 조회
     /// Param:
     /// - `chain_id`: chain_id 값
@@ -43,33 +37,10 @@ pub trait BackfillSource {
         chain_id: i32,
         from_block: i64,
         to_block: i64,
-    ) -> Result<Vec<Block>> {
-        if from_block > to_block {
-            return Err(AppError::msg(format!(
-                "invalid backfill range: from_block {from_block} is greater than to_block {to_block}"
-            )));
-        }
-
-        let mut blocks = Vec::new();
-        for block_number in from_block..=to_block {
-            blocks.push(self.fetch_block(chain_id, block_number).await?);
-        }
-        Ok(blocks)
-    }
+    ) -> Result<Vec<Block>>;
 }
 
 impl BackfillSource for RpcBackfillClient {
-    /// Purpose: JSON-RPC에서 block과 receipt를 조회해 proto block으로 변환
-    /// Param:
-    /// - `chain_id`: chain_id 값
-    /// - `block_number`: 조회할 block_number
-    async fn fetch_block(&self, chain_id: i32, block_number: i64) -> Result<Block> {
-        let block = self.fetch_rpc_block(block_number).await?;
-        let receipts = self.fetch_receipts(&block.transactions).await?;
-
-        rpc_block_to_proto(chain_id, block, receipts)
-    }
-
     /// Purpose: JSON-RPC batch로 block과 receipt를 조회해 proto block 목록으로 변환
     /// Param:
     /// - `chain_id`: chain_id 값
@@ -133,71 +104,6 @@ impl RpcBackfillClient {
 
                 serde_json::from_value(result).map_err(|error| {
                     AppError::with_source("failed to decode backfill block", error)
-                })
-            })
-            .collect()
-    }
-
-    /// Purpose: eth_getBlockByNumber로 transaction 포함 block 조회
-    /// Param:
-    /// - `self`: RpcBackfillClient
-    /// - `block_number`: 조회할 block_number
-    async fn fetch_rpc_block(&self, block_number: i64) -> Result<RpcBlock> {
-        let result = self
-            .send_single(
-                "eth_getBlockByNumber",
-                json!([format!("0x{block_number:x}"), true]),
-            )
-            .await?;
-
-        if result.is_null() {
-            return Err(AppError::msg(format!(
-                "backfill block {block_number} not found"
-            )));
-        }
-
-        serde_json::from_value(result)
-            .map_err(|error| AppError::with_source("failed to decode backfill block", error))
-    }
-
-    /// Purpose: transaction 목록의 receipt를 batch JSON-RPC로 조회
-    /// Param:
-    /// - `self`: RpcBackfillClient
-    /// - `transactions`: receipt 조회 대상 transaction 목록
-    async fn fetch_receipts(&self, transactions: &[RpcTransaction]) -> Result<Vec<RpcReceipt>> {
-        if transactions.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let requests = transactions
-            .iter()
-            .enumerate()
-            .map(|(index, transaction)| JsonRpcRequest {
-                jsonrpc: "2.0",
-                id: index as u64,
-                method: "eth_getTransactionReceipt",
-                params: json!([transaction.hash]),
-            })
-            .collect::<Vec<_>>();
-
-        let responses = self.send_batch(requests, "receipt batch").await?;
-
-        responses
-            .into_iter()
-            .map(|response| {
-                if let Some(error) = response.error {
-                    return Err(AppError::msg(format!(
-                        "receipt request failed: {}",
-                        error.message
-                    )));
-                }
-
-                let result = response
-                    .result
-                    .ok_or_else(|| AppError::msg("receipt response missing result"))?;
-
-                serde_json::from_value(result).map_err(|error| {
-                    AppError::with_source("failed to decode backfill receipt", error)
                 })
             })
             .collect()
@@ -401,42 +307,6 @@ impl RpcBackfillClient {
         }
 
         Ok(responses)
-    }
-
-    /// Purpose: 단건 JSON-RPC 요청 전송 후 result 반환
-    /// Param:
-    /// - `self`: RpcBackfillClient
-    /// - `method`: JSON-RPC method
-    /// - `params`: JSON-RPC params
-    async fn send_single(&self, method: &'static str, params: Value) -> Result<Value> {
-        let response = self
-            .http
-            .post(&self.rpc_url)
-            .json(&JsonRpcRequest {
-                jsonrpc: "2.0",
-                id: 1,
-                method,
-                params,
-            })
-            .send()
-            .await
-            .map_err(|error| AppError::with_source("failed to send JSON-RPC request", error))?
-            .error_for_status()
-            .map_err(|error| AppError::with_source("JSON-RPC request failed", error))?
-            .json::<JsonRpcResponse>()
-            .await
-            .map_err(|error| AppError::with_source("failed to decode JSON-RPC response", error))?;
-
-        if let Some(error) = response.error {
-            return Err(AppError::msg(format!(
-                "JSON-RPC request failed: {}",
-                error.message
-            )));
-        }
-
-        response
-            .result
-            .ok_or_else(|| AppError::msg("JSON-RPC response missing result"))
     }
 }
 

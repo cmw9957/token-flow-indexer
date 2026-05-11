@@ -720,14 +720,24 @@ mod tests {
     }
 
     impl BackfillSource for MockBackfill {
-        async fn fetch_block(&self, _chain_id: i32, block_number: i64) -> Result<Block> {
-            self.blocks
-                .lock()
-                .unwrap()
-                .iter()
-                .find(|block| block.number == block_number as u64)
-                .cloned()
-                .ok_or_else(|| AppError::msg(format!("missing mock backfill block {block_number}")))
+        async fn fetch_blocks(
+            &self,
+            _chain_id: i32,
+            from_block: i64,
+            to_block: i64,
+        ) -> Result<Vec<Block>> {
+            let blocks = self.blocks.lock().unwrap();
+            (from_block..=to_block)
+                .map(|block_number| {
+                    blocks
+                        .iter()
+                        .find(|block| block.number == block_number as u64)
+                        .cloned()
+                        .ok_or_else(|| {
+                            AppError::msg(format!("missing mock backfill block {block_number}"))
+                        })
+                })
+                .collect()
         }
     }
 
@@ -818,7 +828,6 @@ mod tests {
                     first: 10,
                     last: 12,
                 }),
-                new_range: None,
                 fork_block: Some(BlockRef {
                     number: 9,
                     hash: vec![0x99; 32],
@@ -867,10 +876,6 @@ mod tests {
         ExExNotification {
             kind: ExExNotificationKind::ChainCommitted as i32,
             old_range: None,
-            new_range: Some(crate::proto::BlockRange {
-                first: number,
-                last: number,
-            }),
             fork_block: None,
             tip_block: Some(BlockRef {
                 number,

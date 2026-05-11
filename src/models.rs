@@ -66,28 +66,12 @@ impl fmt::Display for SourceType {
     }
 }
 
-impl FromStr for SourceType {
-    type Err = ParseEnumError;
-
-    /// Purpose: DB 문자열을 SourceType으로 변환
-    /// Param:
-    /// - `value`: 변환할 DB value
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "TX_VALUE" => Ok(Self::TxValue),
-            "LOG" => Ok(Self::Log),
-            _ => Err(ParseEnumError::new("SourceType", value)),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetType {
     Native,
     Erc20,
     Erc721,
     Erc1155,
-    Unknown,
 }
 
 impl AssetType {
@@ -100,7 +84,6 @@ impl AssetType {
             Self::Erc20 => "ERC20",
             Self::Erc721 => "ERC721",
             Self::Erc1155 => "ERC1155",
-            Self::Unknown => "UNKNOWN",
         }
     }
 }
@@ -112,24 +95,6 @@ impl fmt::Display for AssetType {
     /// - `f`: fmt formatter
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for AssetType {
-    type Err = ParseEnumError;
-
-    /// Purpose: DB 문자열을 AssetType으로 변환
-    /// Param:
-    /// - `value`: 변환할 DB value
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "NATIVE" => Ok(Self::Native),
-            "ERC20" => Ok(Self::Erc20),
-            "ERC721" => Ok(Self::Erc721),
-            "ERC1155" => Ok(Self::Erc1155),
-            "UNKNOWN" => Ok(Self::Unknown),
-            _ => Err(ParseEnumError::new("AssetType", value)),
-        }
     }
 }
 
@@ -219,7 +184,6 @@ mod tests {
         // SourceType DB 문자열 변환 검증
         assert_eq!(SourceType::TxValue.as_str(), "TX_VALUE");
         assert_eq!(SourceType::TxValue.to_string(), "TX_VALUE");
-        assert_eq!("LOG".parse::<SourceType>().unwrap(), SourceType::Log);
     }
 
     #[test]
@@ -227,8 +191,8 @@ mod tests {
         // AssetType DB 문자열 변환 검증
         assert_eq!(AssetType::Native.as_str(), "NATIVE");
         assert_eq!(AssetType::Erc20.to_string(), "ERC20");
-        assert_eq!("ERC721".parse::<AssetType>().unwrap(), AssetType::Erc721);
-        assert_eq!("ERC1155".parse::<AssetType>().unwrap(), AssetType::Erc1155);
+        assert_eq!(AssetType::Erc721.as_str(), "ERC721");
+        assert_eq!(AssetType::Erc1155.as_str(), "ERC1155");
     }
 
     #[test]
@@ -242,8 +206,8 @@ mod tests {
     #[test]
     fn enum_parse_errors_include_enum_name_and_value() {
         // enum 파싱 에러 메시지 검증
-        let error = "BAD".parse::<AssetType>().unwrap_err();
+        let error = "BAD".parse::<SyncStatus>().unwrap_err();
 
-        assert_eq!(error.to_string(), "unknown AssetType value \"BAD\"");
+        assert_eq!(error.to_string(), "unknown SyncStatus value \"BAD\"");
     }
 }

@@ -43,7 +43,7 @@ create table if not exists asset_movements (
         on delete cascade,
 
     check (source_type in ('TX_VALUE', 'LOG')),
-    check (asset_type in ('NATIVE', 'ERC20', 'ERC721', 'ERC1155', 'UNKNOWN')),
+    check (asset_type in ('NATIVE', 'ERC20', 'ERC721', 'ERC1155')),
     check (amount_raw >= 0)
 );
 
