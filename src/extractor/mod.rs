@@ -20,7 +20,7 @@ pub struct RawBlock {
     pub block_number: i64,
     pub block_hash: String,
     pub parent_hash: String,
-    pub block_timestamp: String,
+    pub block_timestamp: i64,
     pub transactions: Vec<RawTransaction>,
 }
 
@@ -101,7 +101,7 @@ fn base_log_movement(
         chain_id: block.chain_id,
         block_number: block.block_number,
         block_hash: normalize_hash(&block.block_hash)?,
-        block_timestamp: block.block_timestamp.clone(),
+        block_timestamp: block.block_timestamp,
         tx_hash: normalize_hash(&transaction.tx_hash)?,
         tx_index: transaction.tx_index,
         source_type: SourceType::Log,
@@ -130,7 +130,7 @@ mod tests {
             block_number: 10,
             block_hash: format!("0x{}", "11".repeat(32)),
             parent_hash: format!("0x{}", "22".repeat(32)),
-            block_timestamp: "1700000000".to_owned(),
+            block_timestamp: 1_700_000_000,
             transactions: vec![RawTransaction {
                 tx_hash: format!("0x{}", "33".repeat(32)),
                 tx_index: 0,
@@ -160,7 +160,7 @@ mod tests {
             block_number: 10,
             block_hash: format!("0x{}", "11".repeat(32)),
             parent_hash: format!("0x{}", "22".repeat(32)),
-            block_timestamp: "1700000000".to_owned(),
+            block_timestamp: 1_700_000_000,
             transactions: vec![RawTransaction {
                 tx_hash: format!("0x{}", "33".repeat(32)),
                 tx_index: 0,

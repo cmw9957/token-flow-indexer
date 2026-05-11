@@ -6,7 +6,7 @@ pub struct BlockRecord {
     pub block_number: i64,
     pub block_hash: String,
     pub parent_hash: String,
-    pub block_timestamp: String,
+    pub block_timestamp: i64,
     pub tx_count: i32,
     pub movement_count: i32,
 }
@@ -16,7 +16,7 @@ pub struct AssetMovement {
     pub chain_id: i32,
     pub block_number: i64,
     pub block_hash: String,
-    pub block_timestamp: String,
+    pub block_timestamp: i64,
     pub tx_hash: String,
     pub tx_index: i32,
     pub source_type: SourceType,

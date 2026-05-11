@@ -16,7 +16,8 @@ pub fn raw_block(block: Block) -> Result<RawBlock> {
             .map_err(|error| AppError::with_source("block number does not fit in i64", error))?,
         block_hash: format_hash(&block.hash)?,
         parent_hash: format_hash(&block.parent_hash)?,
-        block_timestamp: block.timestamp.to_string(),
+        block_timestamp: i64::try_from(block.timestamp)
+            .map_err(|error| AppError::with_source("block timestamp does not fit in i64", error))?,
         transactions: block
             .transactions
             .into_iter()

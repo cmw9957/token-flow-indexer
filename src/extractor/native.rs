@@ -21,7 +21,7 @@ pub(super) fn native_movement(
         chain_id: block.chain_id,
         block_number: block.block_number,
         block_hash: normalize_hash(&block.block_hash)?,
-        block_timestamp: block.block_timestamp.clone(),
+        block_timestamp: block.block_timestamp,
         tx_hash: normalize_hash(&transaction.tx_hash)?,
         tx_index: transaction.tx_index,
         source_type: SourceType::TxValue,
