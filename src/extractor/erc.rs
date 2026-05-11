@@ -8,7 +8,7 @@ use super::{
     abi::normalize_uint,
     base_log_movement,
     erc1155::{erc1155_batch_movements, erc1155_single_movement},
-    hex::topic_address,
+    normalize::topic_address,
 };
 
 pub(super) const TRANSFER_TOPIC: &str =
@@ -74,7 +74,7 @@ fn erc_transfer_movement(
             AssetType::Erc721,
             topic_address(&log.topics[1])?,
             topic_address(&log.topics[2])?,
-            Some(super::hex::topic_uint(&log.topics[3])?),
+            Some(super::normalize::topic_uint(&log.topics[3])?),
             "1".to_owned(),
             0,
         )?));

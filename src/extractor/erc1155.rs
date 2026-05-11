@@ -7,7 +7,7 @@ use super::{
     RawBlock, RawLog, RawTransaction,
     abi::{data_words, decode_two_uint_arrays, hex_word_to_decimal},
     base_log_movement,
-    hex::topic_address,
+    normalize::topic_address,
 };
 
 /// Purpose: ERC1155 TransferSingle 로그를 자산 이동으로 변환

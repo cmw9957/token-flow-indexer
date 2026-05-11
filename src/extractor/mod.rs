@@ -1,8 +1,8 @@
 mod abi;
 mod erc;
 mod erc1155;
-mod hex;
 mod native;
+mod normalize;
 
 use crate::{
     error::Result,
@@ -11,8 +11,8 @@ use crate::{
 
 use abi::is_zero_hex_or_decimal;
 use erc::log_movements;
-use hex::{normalize_address, normalize_hash};
 use native::native_movement;
+use normalize::{normalize_address, normalize_hash};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawBlock {

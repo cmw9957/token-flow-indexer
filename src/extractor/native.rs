@@ -6,7 +6,7 @@ use crate::{
 use super::{
     RawBlock, RawTransaction,
     abi::normalize_uint,
-    hex::{normalize_address, normalize_hash},
+    normalize::{normalize_address, normalize_hash},
 };
 
 /// Purpose: 트랜잭션 value 기반 native 자산 이동 생성
